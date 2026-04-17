@@ -1,5 +1,5 @@
 import { state, getCurrentBoard, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentUser } from './store.js';
-import { generateId, showToast, getDragAfterElement } from './utils.js';
+import { generateId, showToast, getDragAfterElement, getEffectiveRemainingHours } from './utils.js';
 
 // ================================
 // BOARD RENDERING
@@ -105,7 +105,7 @@ export const createListElement = (list) => {
 
     // Calculate totals
     const totalInitialEstimate = list.cards.reduce((sum, card) => sum + (card.initialEstimate || 0), 0);
-    const totalRemainingHours = list.cards.reduce((sum, card) => sum + (card.remainingHours || 0), 0);
+    const totalRemainingHours = list.cards.reduce((sum, card) => sum + getEffectiveRemainingHours(card), 0);
 
     listEl.innerHTML = `
         <div class="list-header">
@@ -251,7 +251,7 @@ export const createListElement = (list) => {
                 dueDate: '',
                 checklist: [],
                 initialEstimate: 0,
-                remainingHours: 0
+                remainingHoursLog: []
             });
             // Sync backlog if needed (omitted for brevity but should be here)
             if (state.currentProjectId) {
@@ -358,7 +358,7 @@ export const createCardElement = (card, listId) => {
     }
 
     const est = Number(card.initialEstimate) || 0;
-    const rem = Number(card.remainingHours) || 0;
+    const rem = getEffectiveRemainingHours(card);
     if (est > 0 || rem > 0) {
         metaParts.push(`
             <span class="card-meta-item" title="Remaining / Estimate">
@@ -622,40 +622,54 @@ export const updateBurndownChart = () => {
     const board = getCurrentBoard();
     if (!board) return;
 
-    let totalRemaining = 0;
-    board.lists.forEach(list => list.cards.forEach(card => totalRemaining += (card.remainingHours || 0)));
+    // Collect all cards from the board
+    const allCards = [];
+    board.lists.forEach(list => list.cards.forEach(card => allCards.push(card)));
 
+    // Compute current total remaining
+    const totalRemaining = allCards.reduce((sum, card) => sum + getEffectiveRemainingHours(card), 0);
     const totalEl = document.getElementById('totalRemainingValue');
     if (totalEl) totalEl.textContent = `${totalRemaining} h`;
 
-    const today = new Date().toISOString().split('T')[0];
-    if (!board.history) board.history = [];
-
-    const todayEntry = board.history.find(h => h.date === today);
-    if (todayEntry) todayEntry.remaining = totalRemaining;
-    else board.history.push({ date: today, remaining: totalRemaining });
-
-    board.history.sort((a, b) => new Date(a.date) - new Date(b.date));
-    saveState();
+    // Build chart data from all log entries using step-function aggregation
+    const allTimestamps = new Set();
+    allCards.forEach(card => {
+        (card.remainingHoursLog || []).forEach(e => allTimestamps.add(e.timestamp));
+    });
 
     const ctx = document.getElementById('burndownChart');
     if (!ctx) return;
     if (burndownChart) burndownChart.destroy();
     if (typeof Chart === 'undefined') return;
 
+    const sortedTimestamps = [...allTimestamps].sort();
+    if (!sortedTimestamps.length) return;
+
+    // Snap to end-of-day for daily view
+    const uniqueDays = [...new Set(sortedTimestamps.map(t => t.slice(0, 10)))];
+    uniqueDays.sort();
+
+    const chartLabels = uniqueDays.map(d => {
+        const dt = new Date(`${d}T23:59:59.999Z`);
+        return `${dt.getUTCDate()}/${dt.getUTCMonth() + 1}`;
+    });
+
+    const chartData = uniqueDays.map(d => {
+        const endOfDay = new Date(`${d}T23:59:59.999Z`);
+        return allCards.reduce((sum, card) => sum + getEffectiveRemainingHours(card, endOfDay), 0);
+    });
+
     burndownChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: board.history.map(h => {
-                const d = new Date(h.date);
-                return `${d.getDate()}/${d.getMonth() + 1}`;
-            }),
+            labels: chartLabels,
             datasets: [{
                 label: 'Remaining',
-                data: board.history.map(h => h.remaining),
+                data: chartData,
                 borderColor: '#6366f1',
                 backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                fill: true
+                fill: true,
+                tension: 0.4
             }]
         },
         options: { responsive: true, maintainAspectRatio: false }

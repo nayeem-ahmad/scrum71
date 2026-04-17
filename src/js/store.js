@@ -1,5 +1,5 @@
 import { auth, db, isFirebaseConfigured } from './config.js';
-import { generateId, showToast } from './utils.js';
+import { generateId, showToast, getEffectiveRemainingHours } from './utils.js';
 
 // ================================
 // DATA STORE
@@ -56,32 +56,32 @@ export const initializeSampleData = () => {
                 id: generateId(),
                 title: 'To Do',
                 cards: [
-                    { id: generateId(), title: 'Research competitor products', description: 'Analyze top 5 competitors', labels: ['priority-high'], dueDate: '2026-01-10', checklist: [{ id: generateId(), text: 'Find competitors', completed: true }, { id: generateId(), text: 'Analyze features', completed: false }], initialEstimate: 8, remainingHours: 5 },
-                    { id: generateId(), title: 'Design homepage mockup', description: 'Create wireframes and high-fidelity designs', labels: ['feature'], dueDate: '', checklist: [], initialEstimate: 16, remainingHours: 16 },
-                    { id: generateId(), title: 'Set up development environment', description: '', labels: ['improvement'], dueDate: '2026-01-08', checklist: [], initialEstimate: 4, remainingHours: 2 }
+                    { id: generateId(), title: 'Research competitor products', description: 'Analyze top 5 competitors', labels: ['priority-high'], dueDate: '2026-01-10', checklist: [{ id: generateId(), text: 'Find competitors', completed: true }, { id: generateId(), text: 'Analyze features', completed: false }], initialEstimate: 8, remainingHoursLog: [{ id: generateId(), remainingHours: 5, timestamp: '2026-01-03T10:00:00.000Z' }] },
+                    { id: generateId(), title: 'Design homepage mockup', description: 'Create wireframes and high-fidelity designs', labels: ['feature'], dueDate: '', checklist: [], initialEstimate: 16, remainingHoursLog: [{ id: generateId(), remainingHours: 16, timestamp: '2026-01-03T10:00:00.000Z' }] },
+                    { id: generateId(), title: 'Set up development environment', description: '', labels: ['improvement'], dueDate: '2026-01-08', checklist: [], initialEstimate: 4, remainingHoursLog: [{ id: generateId(), remainingHours: 2, timestamp: '2026-01-03T10:00:00.000Z' }] }
                 ]
             },
             {
                 id: generateId(),
                 title: 'In Progress',
                 cards: [
-                    { id: generateId(), title: 'Implement user authentication', description: 'OAuth2 and email/password login', labels: ['feature', 'priority-medium'], dueDate: '2026-01-15', checklist: [{ id: generateId(), text: 'Set up OAuth', completed: true }, { id: generateId(), text: 'Email verification', completed: false }], initialEstimate: 24, remainingHours: 12 },
-                    { id: generateId(), title: 'Create database schema', description: 'PostgreSQL with proper indexing', labels: ['priority-high'], dueDate: '', checklist: [], initialEstimate: 8, remainingHours: 6 }
+                    { id: generateId(), title: 'Implement user authentication', description: 'OAuth2 and email/password login', labels: ['feature', 'priority-medium'], dueDate: '2026-01-15', checklist: [{ id: generateId(), text: 'Set up OAuth', completed: true }, { id: generateId(), text: 'Email verification', completed: false }], initialEstimate: 24, remainingHoursLog: [{ id: generateId(), remainingHours: 12, timestamp: '2026-01-03T10:00:00.000Z' }] },
+                    { id: generateId(), title: 'Create database schema', description: 'PostgreSQL with proper indexing', labels: ['priority-high'], dueDate: '', checklist: [], initialEstimate: 8, remainingHoursLog: [{ id: generateId(), remainingHours: 6, timestamp: '2026-01-03T10:00:00.000Z' }] }
                 ]
             },
             {
                 id: generateId(),
                 title: 'Review',
                 cards: [
-                    { id: generateId(), title: 'API documentation', description: 'Swagger/OpenAPI specs', labels: ['improvement'], dueDate: '2026-01-07', checklist: [], initialEstimate: 6, remainingHours: 3 }
+                    { id: generateId(), title: 'API documentation', description: 'Swagger/OpenAPI specs', labels: ['improvement'], dueDate: '2026-01-07', checklist: [], initialEstimate: 6, remainingHoursLog: [{ id: generateId(), remainingHours: 3, timestamp: '2026-01-03T10:00:00.000Z' }] }
                 ]
             },
             {
                 id: generateId(),
                 title: 'Done',
                 cards: [
-                    { id: generateId(), title: 'Project setup', description: 'Initial configuration complete', labels: ['priority-low'], dueDate: '', checklist: [], initialEstimate: 2, remainingHours: 0 },
-                    { id: generateId(), title: 'Team kickoff meeting', description: 'Introductions and project overview', labels: [], dueDate: '', checklist: [], initialEstimate: 1, remainingHours: 0 }
+                    { id: generateId(), title: 'Project setup', description: 'Initial configuration complete', labels: ['priority-low'], dueDate: '', checklist: [], initialEstimate: 2, remainingHoursLog: [] },
+                    { id: generateId(), title: 'Team kickoff meeting', description: 'Introductions and project overview', labels: [], dueDate: '', checklist: [], initialEstimate: 1, remainingHoursLog: [] }
                 ]
             }
         ],

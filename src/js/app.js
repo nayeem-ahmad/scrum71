@@ -1,7 +1,7 @@
 import { initAuth } from './auth.js';
 import { renderBoard } from './board.js';
 import { state, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentBoard } from './store.js';
-import { showToast, generateUniqueProjectName, generateId } from './utils.js';
+import { showToast, generateUniqueProjectName, generateId, getEffectiveRemainingHours } from './utils.js';
 import './project.js'; // Import project logic/listeners
 
 console.log('App initialization...');
@@ -181,7 +181,6 @@ const openCardModal = ({ cardId, listId }) => {
     document.getElementById('cardDescription').value = card.description || '';
     document.getElementById('cardDueDate').value = card.dueDate || '';
     document.getElementById('cardInitialEstimate').value = card.initialEstimate ?? '';
-    document.getElementById('cardRemainingHours').value = card.remainingHours ?? '';
 
     document.querySelectorAll('#labelPicker .label-option').forEach(btn => {
         btn.classList.toggle('selected', (card.labels || []).includes(btn.dataset.label));
@@ -189,6 +188,7 @@ const openCardModal = ({ cardId, listId }) => {
 
     renderChecklist(card);
     renderAssigneeOptions(card);
+    renderRemainingHoursTab(card);
 
     document.getElementById('cardModal').classList.add('active');
 };
@@ -215,8 +215,6 @@ const saveCardChanges = () => {
 
     const estVal = document.getElementById('cardInitialEstimate').value;
     card.initialEstimate = estVal === '' ? 0 : Number(estVal) || 0;
-    const remVal = document.getElementById('cardRemainingHours').value;
-    card.remainingHours = remVal === '' ? 0 : Number(remVal) || 0;
 
     card.labels = [...document.querySelectorAll('#labelPicker .label-option.selected')]
         .map(btn => btn.dataset.label);
@@ -274,6 +272,207 @@ const deleteCard = () => {
 };
 
 window.addEventListener('openCardModal', (e) => openCardModal(e.detail));
+
+// ================================
+// REMAINING HOURS LOG
+// ================================
+
+let cardRemainingChart = null;
+
+const renderRemainingHoursTab = (card) => {
+    if (!card.remainingHoursLog) card.remainingHoursLog = [];
+
+    // Always collapse history panel when modal opens
+    const panel = document.getElementById('rhHistoryPanel');
+    const label = document.getElementById('rhHistoryToggleLabel');
+    const toggle = document.getElementById('rhHistoryToggle');
+    if (panel) panel.classList.add('hidden');
+    if (label) label.textContent = 'Show history';
+    if (toggle) toggle.classList.remove('open');
+
+    // Set default timestamp to now
+    const tsInput = document.getElementById('rhNewTimestamp');
+    if (tsInput) {
+        tsInput.value = new Date().toISOString().slice(0, 16);
+    }
+};
+
+document.getElementById('rhHistoryToggle')?.addEventListener('click', () => {
+    const card = getEditingCard();
+    if (!card) return;
+    const panel = document.getElementById('rhHistoryPanel');
+    const label = document.getElementById('rhHistoryToggleLabel');
+    const toggle = document.getElementById('rhHistoryToggle');
+    const isHidden = panel.classList.contains('hidden');
+    if (isHidden) {
+        panel.classList.remove('hidden');
+        if (label) label.textContent = 'Hide history';
+        if (toggle) toggle.classList.add('open');
+        renderRhLogList(card);
+        renderCardRemainingChart(card);
+    } else {
+        panel.classList.add('hidden');
+        if (label) label.textContent = 'Show history';
+        if (toggle) toggle.classList.remove('open');
+    }
+});
+
+const renderRhLogList = (card) => {
+    const container = document.getElementById('rhLogList');
+    if (!container) return;
+    const log = [...(card.remainingHoursLog || [])];
+    log.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    if (!log.length) {
+        container.innerHTML = '<div class="rh-empty">No entries yet. Add a remaining hours update below.</div>';
+        return;
+    }
+
+    container.innerHTML = log.map(entry => {
+        const dt = new Date(entry.timestamp);
+        const dateStr = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        const timeStr = dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        return `
+        <div class="rh-entry" data-entry-id="${escapeHtml(entry.id)}">
+            <div class="rh-entry-view">
+                <span class="rh-entry-hours">${entry.remainingHours} h</span>
+                <span class="rh-entry-date">${dateStr} ${timeStr}</span>
+                <div class="rh-entry-actions">
+                    <button class="rh-edit-btn" title="Edit">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                    </button>
+                    <button class="rh-delete-btn" title="Delete">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="rh-entry-edit hidden">
+                <input type="number" class="form-input rh-edit-hours" value="${entry.remainingHours}" min="0" step="0.5">
+                <input type="datetime-local" class="form-input rh-edit-timestamp" value="${entry.timestamp.slice(0,16)}">
+                <div class="rh-edit-actions">
+                    <button class="btn btn-sm btn-primary rh-save-edit-btn">Save</button>
+                    <button class="btn btn-sm btn-secondary rh-cancel-edit-btn">Cancel</button>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    container.querySelectorAll('.rh-entry').forEach(el => {
+        const entryId = el.dataset.entryId;
+
+        el.querySelector('.rh-delete-btn').addEventListener('click', () => {
+            card.remainingHoursLog = card.remainingHoursLog.filter(e => e.id !== entryId);
+            saveState();
+            renderBoard();
+            renderRhLogList(card);
+            renderCardRemainingChart(card);
+        });
+
+        el.querySelector('.rh-edit-btn').addEventListener('click', () => {
+            el.querySelector('.rh-entry-view').classList.add('hidden');
+            el.querySelector('.rh-entry-edit').classList.remove('hidden');
+        });
+
+        el.querySelector('.rh-cancel-edit-btn').addEventListener('click', () => {
+            el.querySelector('.rh-entry-view').classList.remove('hidden');
+            el.querySelector('.rh-entry-edit').classList.add('hidden');
+        });
+
+        el.querySelector('.rh-save-edit-btn').addEventListener('click', () => {
+            const newHours = parseFloat(el.querySelector('.rh-edit-hours').value);
+            const newTs = el.querySelector('.rh-edit-timestamp').value;
+            if (isNaN(newHours) || newHours < 0 || !newTs) {
+                showToast('Enter valid hours and timestamp', 'error');
+                return;
+            }
+            const entry = card.remainingHoursLog.find(e => e.id === entryId);
+            if (entry) {
+                entry.remainingHours = newHours;
+                entry.timestamp = new Date(newTs).toISOString();
+            }
+            saveState();
+            renderBoard();
+            renderRhLogList(card);
+            renderCardRemainingChart(card);
+        });
+    });
+};
+
+const renderCardRemainingChart = (card) => {
+    const ctx = document.getElementById('cardRemainingChart');
+    if (!ctx) return;
+    if (typeof Chart === 'undefined') return;
+
+    if (cardRemainingChart) {
+        cardRemainingChart.destroy();
+        cardRemainingChart = null;
+    }
+
+    const log = [...(card.remainingHoursLog || [])];
+    if (!log.length) {
+        ctx.style.display = 'none';
+        return;
+    }
+    ctx.style.display = '';
+
+    log.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    const labels = log.map(e => {
+        const d = new Date(e.timestamp);
+        return `${d.getDate()}/${d.getMonth() + 1} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+    });
+    const data = log.map(e => e.remainingHours);
+
+    cardRemainingChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Remaining Hours',
+                data,
+                borderColor: '#6366f1',
+                backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+};
+
+document.getElementById('rhAddEntryBtn')?.addEventListener('click', () => {
+    const card = getEditingCard();
+    if (!card) return;
+    const hoursVal = document.getElementById('rhNewHours').value;
+    const tsVal = document.getElementById('rhNewTimestamp').value;
+    if (hoursVal === '' || !tsVal) {
+        showToast('Enter hours and timestamp', 'error');
+        return;
+    }
+    const hours = parseFloat(hoursVal);
+    if (isNaN(hours) || hours < 0) {
+        showToast('Enter a valid hours value', 'error');
+        return;
+    }
+    if (!card.remainingHoursLog) card.remainingHoursLog = [];
+    card.remainingHoursLog.push({
+        id: generateId(),
+        remainingHours: hours,
+        timestamp: new Date(tsVal).toISOString()
+    });
+    document.getElementById('rhNewHours').value = '';
+    document.getElementById('rhNewTimestamp').value = new Date().toISOString().slice(0, 16);
+    saveState();
+    renderBoard();
+    renderRhLogList(card);
+    renderCardRemainingChart(card);
+    showToast('Entry added', 'success');
+});
 
 document.getElementById('closeCardModal')?.addEventListener('click', closeCardModal);
 document.getElementById('cancelCardBtn')?.addEventListener('click', closeCardModal);

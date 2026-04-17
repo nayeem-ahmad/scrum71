@@ -10,31 +10,40 @@ Draft
 
 ## Acceptance Criteria
 1. Floating burndown panel appears on board view
-2. Panel header shows total remaining hours
-3. Chart plots remaining hours on Y-axis
-4. Chart plots sprint days on X-axis (start to end date)
-5. Panel can be collapsed to header-only view
-6. Panel can be dragged/repositioned (optional)
+2. Panel header shows total current remaining hours (sum across all sprint cards using `getEffectiveRemainingHours` at now)
+3. Chart plots total remaining hours on Y-axis
+4. Chart plots sprint days on X-axis (start to end date, one point per day)
+5. For each day on the X-axis, total remaining hours = sum of `getEffectiveRemainingHours(card, endOfDay)` across all cards in the sprint — using the latest log entry available at or before that day's end
+6. Days with no log entries for any card carry forward the last known value for each card (step-function behaviour)
+7. Panel can be collapsed to header-only view
+8. Panel can be dragged/repositioned (optional)
 
 ## Tasks / Subtasks
 - [ ] Task 1: Panel Structure
   - [ ] Create HTML structure for a floating, draggable panel (e.g., `div` with `position: fixed`)
-  - [ ] Add header to the panel with a title and a collapse/expand button
+  - [ ] Add header to the panel with total remaining hours and a collapse/expand button
   - [ ] Integrate Chart.js canvas element within the panel body
 
-- [ ] Task 2: Chart Data Provision
-  - [ ] Implement a function to gather `remainingHours` data points from `state` for plotting (Y-axis)
-  - [ ] Implement a function to generate sprint day labels based on sprint `startDate` and `endDate` (X-axis)
+- [ ] Task 2: Chart Data Aggregation
+  - [ ] Generate an array of date labels from `sprint.startDate` to `sprint.endDate` (inclusive, one per day)
+  - [ ] For each date label `d`, compute `totalRemaining(d)`:
+    - For each card in the sprint, call `getEffectiveRemainingHours(card, endOfDay(d))`
+    - Sum the results
+  - [ ] `getEffectiveRemainingHours(card, t)` returns the `remainingHours` value from the latest entry in `card.remainingHoursLog` where `entry.timestamp <= t`; returns `0` if no entry exists at or before `t`
+  - [ ] Days before any log entry for a card contribute `0` for that card (no estimate logged yet)
 
 - [ ] Task 3: Chart Initialization & Rendering
-  - [ ] Initialize Chart.js instance with gathered data and appropriate chart type (line chart)
-  - [ ] Render the chart within the panel when the board loads
-  - [ ] Update the chart dynamically when sprint data changes
+  - [ ] Initialize Chart.js line chart with the aggregated daily totals
+  - [ ] Render the chart when the board loads and a sprint is active
+  - [ ] Update the chart whenever any card in the sprint receives a new `remainingHoursLog` entry (real-time listener triggers re-aggregation)
 
 - [ ] Task 4: Panel Functionality
-  - [ ] Implement collapse/expand functionality for the panel content
-  - [ ] (Optional) Implement drag-and-drop for repositioning the panel on the screen using standard HTML Drag & Drop API or a library
+  - [ ] Implement collapse/expand for panel content
+  - [ ] (Optional) Implement drag-and-drop repositioning using standard HTML Drag & Drop API
 
 ## Dev Notes
-- The `board.js` already includes `Chart.js`, so reuse the existing implementation.
-- Focus on making the panel non-intrusive and user-friendly.
+- The shift from a scalar `remainingHours` to `remainingHoursLog` means the chart now reflects true historical state rather than only the current value.
+- `endOfDay(d)` should be `d` at 23:59:59.999` local time so a log entry made any time during that day is included.
+- For performance at MVP scale, re-aggregate all days on any change (lazy optimisation later: only recompute affected days).
+- The `board.js` already includes Chart.js — reuse the existing instance/import.
+- This story depends on Story 4.1 (`getEffectiveRemainingHours` helper) and Story 4.1b (log entries being populated).

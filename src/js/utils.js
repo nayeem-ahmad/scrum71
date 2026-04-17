@@ -46,6 +46,25 @@ export const removeToast = (toast) => {
     setTimeout(() => toast.remove(), 300);
 };
 
+// ================================
+// REMAINING HOURS LOG HELPERS
+// ================================
+
+/**
+ * Returns the effective remaining hours for a card at a given time.
+ * Takes the latest log entry with timestamp <= atTime.
+ * If atTime is omitted, uses the current time.
+ */
+export const getEffectiveRemainingHours = (card, atTime) => {
+    const log = Array.isArray(card.remainingHoursLog) ? card.remainingHoursLog : [];
+    if (!log.length) return 0;
+    const t = atTime instanceof Date ? atTime : (atTime ? new Date(atTime) : new Date());
+    const eligible = log.filter(e => new Date(e.timestamp) <= t);
+    if (!eligible.length) return 0;
+    eligible.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    return eligible[0].remainingHours;
+};
+
 export const getDragAfterElement = (container, y) => {
     const elements = [...container.querySelectorAll('.card:not(.dragging)')];
 
