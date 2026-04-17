@@ -166,6 +166,10 @@ export const createListElement = (list) => {
     });
     titleInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') titleInput.blur();
+        if (e.key === 'Escape') {
+            titleInput.value = list.title;
+            titleInput.blur();
+        }
     });
 
     // Menu toggle
@@ -274,52 +278,117 @@ export const createListElement = (list) => {
         cardsContainer.appendChild(cardEl);
     });
 
+    // List drag-and-drop (reorder among siblings on the board)
+    listEl.draggable = true;
+    listEl.addEventListener('dragstart', handleListDragStart);
+    listEl.addEventListener('dragend', handleListDragEnd);
+
     return listEl;
 };
 
 // ================================
 // CARD ELEMENT
 // ================================
+const LABEL_COLORS = {
+    'priority-high': '#ef4444',
+    'priority-medium': '#f59e0b',
+    'priority-low': '#22c55e',
+    'bug': '#dc2626',
+    'feature': '#8b5cf6',
+    'improvement': '#06b6d4',
+};
+
+const escapeHtml = (str) => {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+};
+
+const getDueDateMeta = (dueDate) => {
+    if (!dueDate) return null;
+    const due = new Date(dueDate);
+    if (isNaN(due)) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueMidnight = new Date(due);
+    dueMidnight.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((dueMidnight - today) / 86400000);
+    let cls = '';
+    if (diffDays < 0) cls = 'overdue';
+    else if (diffDays <= 2) cls = 'soon';
+    const label = due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return { cls, label };
+};
+
 export const createCardElement = (card, listId) => {
     const cardEl = document.createElement('div');
     cardEl.className = 'card';
     cardEl.dataset.cardId = card.id;
     cardEl.draggable = true;
 
-    // ... (rest of createCardElement logic from app.js)
-    // Simplified for brevity in this Artifact, but assumed full implementation
-    const labelColors = {
-        'priority-high': '#ef4444',
-        'priority-medium': '#f59e0b',
-        'priority-low': '#22c55e',
-        'bug': '#dc2626',
-        'feature': '#8b5cf6',
-        'improvement': '#06b6d4'
-    };
-
-    const labelsHtml = card.labels.length ? `
+    const labels = card.labels || [];
+    const labelsHtml = labels.length ? `
         <div class="card-labels">
-            ${card.labels.map(l => `<div class="card-label" style="background: ${labelColors[l]}"></div>`).join('')}
+            ${labels.map(l => `<div class="card-label" style="background: ${LABEL_COLORS[l] || 'var(--accent-primary)'}" title="${escapeHtml(l)}"></div>`).join('')}
         </div>
     ` : '';
+
+    const metaParts = [];
+
+    const due = getDueDateMeta(card.dueDate);
+    if (due) {
+        metaParts.push(`
+            <span class="card-meta-item ${due.cls}" title="Due ${escapeHtml(due.label)}">
+                <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                ${escapeHtml(due.label)}
+            </span>
+        `);
+    }
+
+    const checklist = Array.isArray(card.checklist) ? card.checklist : [];
+    if (checklist.length) {
+        const done = checklist.filter(i => i.completed).length;
+        const complete = done === checklist.length;
+        metaParts.push(`
+            <span class="card-meta-item ${complete ? 'soon' : ''}" title="Checklist">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                ${done}/${checklist.length}
+            </span>
+        `);
+    }
+
+    const est = Number(card.initialEstimate) || 0;
+    const rem = Number(card.remainingHours) || 0;
+    if (est > 0 || rem > 0) {
+        metaParts.push(`
+            <span class="card-meta-item" title="Remaining / Estimate">
+                <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                ${rem}h / ${est}h
+            </span>
+        `);
+    }
+
+    const metaHtml = metaParts.length ? `<div class="card-meta">${metaParts.join('')}</div>` : '';
 
     cardEl.innerHTML = `
         ${labelsHtml}
         <div class="card-content">
-            <div class="card-title-text">${card.title}</div>
-            <!-- Meta HTML omitted for brevity but should be here -->
+            <div class="card-title-text">${escapeHtml(card.title || '')}</div>
+            ${metaHtml}
         </div>
     `;
 
     cardEl.addEventListener('click', () => {
-        // We will need to trigger openCardModal which is not in board.js?
-        // Let's dispatch event for app.js to handle or import it
         window.dispatchEvent(new CustomEvent('openCardModal', { detail: { cardId: card.id, listId } }));
     });
 
-    // Drag handlers
     cardEl.addEventListener('dragstart', handleCardDragStart);
     cardEl.addEventListener('dragend', handleCardDragEnd);
+
+    cardEl.addEventListener('touchstart', handleCardTouchStart, { passive: true });
+    cardEl.addEventListener('touchmove', handleCardTouchMove, { passive: false });
+    cardEl.addEventListener('touchend', handleCardTouchEnd);
+    cardEl.addEventListener('touchcancel', handleCardTouchEnd);
 
     return cardEl;
 };
@@ -328,6 +397,7 @@ export const createCardElement = (card, listId) => {
 // DRAG AND DROP
 // ================================
 let draggedCard = null;
+let draggedListEl = null;
 
 export const initDragAndDrop = () => {
     document.querySelectorAll('.list-cards').forEach(container => {
@@ -335,6 +405,60 @@ export const initDragAndDrop = () => {
         container.addEventListener('drop', handleCardDrop);
         container.addEventListener('dragleave', handleCardDragLeave);
     });
+
+    if (boardElement) {
+        boardElement.addEventListener('dragover', handleListDragOver);
+        boardElement.addEventListener('drop', handleListDrop);
+    }
+};
+
+// --- List reorder ---
+const handleListDragStart = (e) => {
+    // Ignore drags that originate inside a card (cards handle their own drag)
+    if (e.target.closest('.card')) return;
+    draggedListEl = e.currentTarget;
+    draggedListEl.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', draggedListEl.dataset.listId);
+};
+
+const handleListDragEnd = () => {
+    if (draggedListEl) draggedListEl.classList.remove('dragging');
+    draggedListEl = null;
+};
+
+const getDragAfterList = (container, x) => {
+    const lists = [...container.querySelectorAll('.list:not(.dragging)')];
+    return lists.reduce((closest, list) => {
+        const box = list.getBoundingClientRect();
+        const offset = x - box.left - box.width / 2;
+        if (offset < 0 && offset > closest.offset) return { offset, element: list };
+        return closest;
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+};
+
+const handleListDragOver = (e) => {
+    if (!draggedListEl) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const afterList = getDragAfterList(boardElement, e.clientX);
+    const addListEl = boardElement.querySelector('.add-list');
+    if (!afterList) {
+        if (addListEl) boardElement.insertBefore(draggedListEl, addListEl);
+        else boardElement.appendChild(draggedListEl);
+    } else if (afterList !== draggedListEl) {
+        boardElement.insertBefore(draggedListEl, afterList);
+    }
+};
+
+const handleListDrop = (e) => {
+    if (!draggedListEl) return;
+    e.preventDefault();
+    const board = getCurrentBoard();
+    if (!board) return;
+    const newOrder = [...boardElement.querySelectorAll('.list')].map(el => el.dataset.listId);
+    board.lists.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
+    saveState();
 };
 
 const handleCardDragStart = (e) => {
@@ -350,13 +474,19 @@ const handleCardDragEnd = (e) => {
     const cardEl = e.target.closest('.card');
     if (cardEl) cardEl.classList.remove('dragging');
     document.querySelectorAll('.card-placeholder').forEach(p => p.remove());
+    document.querySelectorAll('.list-cards.drag-over').forEach(el => el.classList.remove('drag-over'));
     draggedCard = null;
 };
 
 const handleCardDragOver = (e) => {
+    if (!draggedCard) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     const container = e.currentTarget;
+    document.querySelectorAll('.list-cards.drag-over').forEach(el => {
+        if (el !== container) el.classList.remove('drag-over');
+    });
+    container.classList.add('drag-over');
     const afterElement = getDragAfterElement(container, e.clientY);
     document.querySelectorAll('.card-placeholder').forEach(p => p.remove());
     const placeholder = document.createElement('div');
@@ -367,20 +497,16 @@ const handleCardDragOver = (e) => {
 
 const handleCardDragLeave = (e) => {
     if (!e.currentTarget.contains(e.relatedTarget)) {
+        e.currentTarget.classList.remove('drag-over');
         e.currentTarget.querySelectorAll('.card-placeholder').forEach(p => p.remove());
     }
 };
 
-const handleCardDrop = (e) => {
-    e.preventDefault();
-    if (!draggedCard) return;
-    const targetListId = e.currentTarget.dataset.listId;
-    const cardId = draggedCard.dataset.cardId;
-
-    // Logic to move card in state...
+const dropCardToContainer = (cardId, container, clientY) => {
+    const targetListId = container.dataset.listId;
     const board = getCurrentBoard();
+    if (!board) return false;
 
-    // Find source/target lists and card
     let sourceList, targetList, card;
     board.lists.forEach(l => {
         if (l.id === targetListId) targetList = l;
@@ -391,18 +517,101 @@ const handleCardDrop = (e) => {
         }
     });
 
-    if (sourceList && targetList && card) {
-        const afterElement = getDragAfterElement(e.currentTarget, e.clientY);
-        let insertIndex = targetList.cards.length;
-        if (afterElement) {
-            const afterId = afterElement.dataset.cardId;
-            const idx = targetList.cards.findIndex(c => c.id === afterId);
-            if (idx !== -1) insertIndex = idx;
-        }
-        targetList.cards.splice(insertIndex, 0, card);
-        saveState();
-        renderBoard();
+    if (!sourceList || !targetList || !card) return false;
+
+    const afterElement = getDragAfterElement(container, clientY);
+    let insertIndex = targetList.cards.length;
+    if (afterElement) {
+        const afterId = afterElement.dataset.cardId;
+        const idx = targetList.cards.findIndex(c => c.id === afterId);
+        if (idx !== -1) insertIndex = idx;
     }
+    targetList.cards.splice(insertIndex, 0, card);
+    saveState();
+    renderBoard();
+    return true;
+};
+
+const handleCardDrop = (e) => {
+    e.preventDefault();
+    if (!draggedCard) return;
+    dropCardToContainer(draggedCard.dataset.cardId, e.currentTarget, e.clientY);
+};
+
+// --- Touch support (long-press to drag) ---
+const LONG_PRESS_MS = 300;
+const TOUCH_SCROLL_THRESHOLD = 8;
+const touchState = { card: null, startX: 0, startY: 0, timer: null, active: false };
+
+const clearTouchVisuals = () => {
+    document.querySelectorAll('.list-cards.drag-over').forEach(el => el.classList.remove('drag-over'));
+    document.querySelectorAll('.card-placeholder').forEach(p => p.remove());
+};
+
+const handleCardTouchStart = (e) => {
+    const cardEl = e.target.closest('.card');
+    if (!cardEl) return;
+    const t = e.touches[0];
+    touchState.card = cardEl;
+    touchState.startX = t.clientX;
+    touchState.startY = t.clientY;
+    touchState.active = false;
+    clearTimeout(touchState.timer);
+    touchState.timer = setTimeout(() => {
+        if (!touchState.card) return;
+        touchState.active = true;
+        draggedCard = cardEl;
+        cardEl.classList.add('dragging');
+        if (navigator.vibrate) navigator.vibrate(25);
+    }, LONG_PRESS_MS);
+};
+
+const handleCardTouchMove = (e) => {
+    if (!touchState.card) return;
+    const t = e.touches[0];
+    if (!touchState.active) {
+        if (Math.hypot(t.clientX - touchState.startX, t.clientY - touchState.startY) > TOUCH_SCROLL_THRESHOLD) {
+            clearTimeout(touchState.timer);
+            touchState.card = null;
+        }
+        return;
+    }
+    e.preventDefault();
+    const pointEl = document.elementFromPoint(t.clientX, t.clientY);
+    const container = pointEl?.closest('.list-cards');
+    clearTouchVisuals();
+    if (container) {
+        container.classList.add('drag-over');
+        const afterElement = getDragAfterElement(container, t.clientY);
+        const placeholder = document.createElement('div');
+        placeholder.className = 'card-placeholder';
+        if (afterElement) container.insertBefore(placeholder, afterElement);
+        else container.appendChild(placeholder);
+    }
+};
+
+const handleCardTouchEnd = (e) => {
+    clearTimeout(touchState.timer);
+    if (!touchState.card) return;
+    const wasActive = touchState.active;
+    const cardEl = touchState.card;
+    touchState.card = null;
+    touchState.active = false;
+    cardEl.classList.remove('dragging');
+    if (!wasActive) {
+        draggedCard = null;
+        clearTouchVisuals();
+        return;
+    }
+    const changedTouch = e.changedTouches?.[0];
+    const container = changedTouch
+        ? document.elementFromPoint(changedTouch.clientX, changedTouch.clientY)?.closest('.list-cards')
+        : null;
+    clearTouchVisuals();
+    if (container && changedTouch) {
+        dropCardToContainer(cardEl.dataset.cardId, container, changedTouch.clientY);
+    }
+    draggedCard = null;
 };
 
 // ================================

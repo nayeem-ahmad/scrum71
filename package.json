@@ -1,0 +1,27 @@
+{
+  "name": "flowboard-kanban",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nayeem-ahmad/flowboard-kanban.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/nayeem-ahmad/flowboard-kanban/issues"
+  },
+  "homepage": "https://github.com/nayeem-ahmad/flowboard-kanban#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
+  }
+}

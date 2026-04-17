@@ -25,3 +25,7 @@ build/
 
 # Logs
 *.log
+
+# Playwright
+playwright-report/
+test-results/

@@ -1,7 +1,7 @@
 import { initAuth } from './auth.js';
 import { renderBoard } from './board.js';
 import { state, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentBoard } from './store.js';
-import { showToast, generateUniqueProjectName } from './utils.js';
+import { showToast, generateUniqueProjectName, generateId } from './utils.js';
 import './project.js'; // Import project logic/listeners
 
 console.log('App initialization...');
@@ -101,14 +101,211 @@ document.getElementById('themeToggle')?.addEventListener('click', () => {
     localStorage.setItem('flowboard-theme', isDark ? 'light' : 'dark');
 });
 
-// Modal Events (Custom Events)
-window.addEventListener('openCardModal', (e) => {
-    const { cardId, listId } = e.detail;
-    // Logic to open card modal (omitted for brevity, would be in modals.js or here)
-    // For now, let's just log
-    console.log('Open card modal', cardId);
+// ================================
+// CARD MODAL
+// ================================
+let editingCardContext = null;
+
+const getEditingCard = () => {
+    if (!editingCardContext) return null;
+    const board = getCurrentBoard();
+    if (!board) return null;
+    const list = board.lists.find(l => l.id === editingCardContext.listId);
+    if (!list) return null;
+    return list.cards.find(c => c.id === editingCardContext.cardId);
+};
+
+const escapeHtml = (str) => {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+};
+
+const renderChecklist = (card) => {
+    const container = document.getElementById('checklist');
+    if (!container) return;
+    if (!card.checklist) card.checklist = [];
+
+    container.innerHTML = card.checklist.map(item => `
+        <div class="checklist-item ${item.completed ? 'completed' : ''}" data-item-id="${item.id}">
+            <input type="checkbox" class="checklist-checkbox" ${item.completed ? 'checked' : ''}>
+            <span class="checklist-text"></span>
+            <button class="checklist-delete" title="Remove">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+        </div>
+    `).join('');
+
+    container.querySelectorAll('.checklist-item').forEach(el => {
+        const id = el.dataset.itemId;
+        const item = card.checklist.find(i => i.id === id);
+        if (!item) return;
+        el.querySelector('.checklist-text').textContent = item.text;
+        el.querySelector('.checklist-checkbox').addEventListener('change', (e) => {
+            item.completed = e.target.checked;
+            el.classList.toggle('completed', e.target.checked);
+        });
+        el.querySelector('.checklist-delete').addEventListener('click', () => {
+            card.checklist = card.checklist.filter(i => i.id !== id);
+            renderChecklist(card);
+        });
+    });
+};
+
+const renderAssigneeOptions = (card) => {
+    const select = document.getElementById('cardAssignee');
+    if (!select) return;
+    const board = getCurrentBoard();
+    const members = [];
+    if (board?.owner) members.push(board.owner);
+    (board?.members || []).forEach(m => members.push(m));
+
+    select.innerHTML = '<option value="">Unassigned</option>' +
+        members.map(m => {
+            const label = m.name || m.email || 'Member';
+            return `<option value="${escapeHtml(m.id)}">${escapeHtml(label)}</option>`;
+        }).join('');
+
+    select.value = card.assigneeId || '';
+};
+
+const openCardModal = ({ cardId, listId }) => {
+    editingCardContext = { cardId, listId };
+    const card = getEditingCard();
+    if (!card) {
+        editingCardContext = null;
+        return;
+    }
+
+    document.getElementById('cardTitle').value = card.title || '';
+    document.getElementById('cardDescription').value = card.description || '';
+    document.getElementById('cardDueDate').value = card.dueDate || '';
+    document.getElementById('cardInitialEstimate').value = card.initialEstimate ?? '';
+    document.getElementById('cardRemainingHours').value = card.remainingHours ?? '';
+
+    document.querySelectorAll('#labelPicker .label-option').forEach(btn => {
+        btn.classList.toggle('selected', (card.labels || []).includes(btn.dataset.label));
+    });
+
+    renderChecklist(card);
+    renderAssigneeOptions(card);
+
     document.getElementById('cardModal').classList.add('active');
-    // ... populate fields ...
+};
+
+const closeCardModal = () => {
+    editingCardContext = null;
+    document.getElementById('cardModal').classList.remove('active');
+};
+
+const saveCardChanges = () => {
+    const card = getEditingCard();
+    if (!card) return;
+
+    const title = document.getElementById('cardTitle').value.trim();
+    if (!title) {
+        showToast('Title cannot be empty', 'error');
+        document.getElementById('cardTitle').focus();
+        return;
+    }
+
+    card.title = title;
+    card.description = document.getElementById('cardDescription').value;
+    card.dueDate = document.getElementById('cardDueDate').value || '';
+
+    const estVal = document.getElementById('cardInitialEstimate').value;
+    card.initialEstimate = estVal === '' ? 0 : Number(estVal) || 0;
+    const remVal = document.getElementById('cardRemainingHours').value;
+    card.remainingHours = remVal === '' ? 0 : Number(remVal) || 0;
+
+    card.labels = [...document.querySelectorAll('#labelPicker .label-option.selected')]
+        .map(btn => btn.dataset.label);
+
+    const assigneeId = document.getElementById('cardAssignee').value;
+    card.assigneeId = assigneeId || null;
+
+    card.updatedAt = new Date().toISOString();
+
+    saveState();
+    renderBoard();
+    closeCardModal();
+    showToast('Card saved', 'success');
+};
+
+const duplicateCard = () => {
+    const card = getEditingCard();
+    if (!card || !editingCardContext) return;
+    const board = getCurrentBoard();
+    const list = board?.lists.find(l => l.id === editingCardContext.listId);
+    if (!list) return;
+
+    const clone = JSON.parse(JSON.stringify(card));
+    clone.id = generateId();
+    clone.title = `${card.title} (copy)`;
+    if (Array.isArray(clone.checklist)) {
+        clone.checklist.forEach(item => { item.id = generateId(); });
+    }
+    clone.createdAt = new Date().toISOString();
+    clone.updatedAt = clone.createdAt;
+
+    const idx = list.cards.findIndex(c => c.id === card.id);
+    list.cards.splice(idx + 1, 0, clone);
+
+    saveState();
+    renderBoard();
+    closeCardModal();
+    showToast('Card duplicated', 'success');
+};
+
+const deleteCard = () => {
+    if (!editingCardContext) return;
+    if (!confirm('Delete this card? This cannot be undone.')) return;
+
+    const board = getCurrentBoard();
+    const list = board?.lists.find(l => l.id === editingCardContext.listId);
+    if (!list) return;
+
+    list.cards = list.cards.filter(c => c.id !== editingCardContext.cardId);
+
+    saveState();
+    renderBoard();
+    closeCardModal();
+    showToast('Card deleted', 'success');
+};
+
+window.addEventListener('openCardModal', (e) => openCardModal(e.detail));
+
+document.getElementById('closeCardModal')?.addEventListener('click', closeCardModal);
+document.getElementById('cancelCardBtn')?.addEventListener('click', closeCardModal);
+document.getElementById('saveCardBtn')?.addEventListener('click', saveCardChanges);
+document.getElementById('duplicateCardBtn')?.addEventListener('click', duplicateCard);
+document.getElementById('deleteCardBtn')?.addEventListener('click', deleteCard);
+
+document.querySelectorAll('#labelPicker .label-option').forEach(btn => {
+    btn.addEventListener('click', () => btn.classList.toggle('selected'));
+});
+
+document.getElementById('addChecklistItemBtn')?.addEventListener('click', () => {
+    const input = document.getElementById('newChecklistItem');
+    const text = input.value.trim();
+    if (!text) return;
+    const card = getEditingCard();
+    if (!card) return;
+    if (!card.checklist) card.checklist = [];
+    card.checklist.push({ id: generateId(), text, completed: false });
+    input.value = '';
+    renderChecklist(card);
+});
+
+document.getElementById('newChecklistItem')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('addChecklistItemBtn').click();
+    }
+});
+
+document.getElementById('cardModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'cardModal') closeCardModal();
 });
 
 window.addEventListener('newUserNoBoards', () => {
