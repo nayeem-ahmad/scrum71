@@ -496,7 +496,7 @@ button {
 }
 
 .list-cards.drag-over {
-    background-color: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+    background-color: rgba(99, 102, 241, 0.1);
     box-shadow: inset 0 0 0 2px var(--accent-primary);
     border-radius: var(--radius-md);
 }
@@ -3273,4 +3273,420 @@ button {
 
 .empty-state.hidden {
     display: none !important;
+}
+/* ================================
+   PHASE 2 — NEW STYLES
+   ================================ */
+
+/* Form layout helpers */
+.form-row {
+    display: flex;
+    gap: 1rem;
+}
+.form-row .form-group {
+    flex: 1;
+}
+.label-optional {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    font-weight: 400;
+}
+
+/* Sprint Info Bar */
+.sprint-info-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 1.25rem;
+    background: rgba(0,0,0,0.15);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    gap: 1rem;
+    flex-shrink: 0;
+}
+.sprint-info-bar.hidden { display: none; }
+.sprint-info-content {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    font-size: 0.875rem;
+    color: rgba(255,255,255,0.9);
+    flex-wrap: wrap;
+}
+.sprint-goal-text { font-weight: 500; }
+.sprint-dates-text { opacity: 0.8; }
+
+/* PM sidebar add-project form */
+.pm-add-project-form {
+    padding: 0.75rem;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+.pm-add-project-form.hidden { display: none; }
+
+/* PM project description */
+.pm-project-desc { margin: 0.25rem 0 0.5rem 0; min-height: 1.2em; }
+
+/* PM edit project form */
+.pm-edit-project-form { padding: 0.5rem 0; }
+.pm-edit-project-form.hidden { display: none; }
+
+/* PM sprint enhancements */
+.pm-sprint-goal {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.2rem;
+    font-style: italic;
+}
+.pm-sprint-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+.pm-sprint-info {
+    flex: 1;
+}
+.pm-sprint-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+.pm-sprint-item.active-sprint {
+    border-left: 3px solid var(--accent-primary);
+}
+.badge-active {
+    display: inline-block;
+    font-size: 0.7rem;
+    background: var(--accent-primary);
+    color: white;
+    padding: 0.1em 0.4em;
+    border-radius: var(--radius-full);
+    margin-left: 0.4rem;
+    vertical-align: middle;
+}
+.pm-empty-hint {
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--text-tertiary);
+    font-size: 0.875rem;
+}
+
+/* Backlog enhancements */
+.backlog-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    margin-bottom: 0.5rem;
+    gap: 0.75rem;
+}
+.backlog-item.in-sprint {
+    border-color: var(--accent-primary);
+    opacity: 0.85;
+}
+.backlog-item-body { flex: 1; min-width: 0; }
+.backlog-item-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.backlog-item-title {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+.backlog-sprint-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    background: var(--accent-primary);
+    color: white;
+    padding: 0.1em 0.5em;
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+}
+.backlog-item-date {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    margin-top: 0.25rem;
+}
+.backlog-item-actions {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+/* Sprint Picker Modal */
+.sprint-picker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.sprint-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    transition: background var(--transition-fast), border-color var(--transition-fast);
+    text-align: left;
+    width: 100%;
+}
+.sprint-picker-item:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--accent-primary);
+}
+.sprint-picker-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* Role badges */
+.role-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 0.1em 0.4em;
+    border-radius: var(--radius-full);
+    margin-left: 0.3rem;
+    vertical-align: middle;
+    font-weight: 600;
+}
+.role-badge.owner { background: var(--accent-primary); color: white; }
+.role-badge.admin { background: var(--warning); color: white; }
+
+/* Board container flex column so info bar stacks above board */
+.board-container {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Team tab inline add-member form */
+.pm-add-member-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    margin: 0.5rem 0;
+}
+.pm-add-member-form.hidden { display: none; }
+.pm-add-member-form input {
+    flex: 1;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+.pm-add-member-form input:focus {
+    outline: none;
+    border-color: var(--border-focus);
+}
+
+/* ================================
+   Phase 3: Assignee avatar on cards
+   ================================ */
+.card-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+}
+.card-meta-left {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex: 1;
+    flex-wrap: wrap;
+}
+.card-meta-right {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.card-assignee {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--bg-secondary);
+    overflow: hidden;
+    flex-shrink: 0;
+}
+.card-assignee img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* ================================
+   Phase 3: Role promotion + PM member actions
+   ================================ */
+.pm-team-member {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: var(--radius-md);
+    transition: background var(--transition-base);
+}
+.pm-team-member:hover { background: var(--bg-tertiary); }
+.pm-team-info { display: flex; align-items: center; gap: 0.6rem; flex: 1; min-width: 0; }
+.pm-member-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+
+/* ================================
+   Phase 3: Invite link section in Team tab
+   ================================ */
+.pm-invite-section {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+.pm-invite-section.hidden { display: none; }
+.pm-invite-section::before {
+    content: '🔗 Invite Link';
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.pm-invite-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+}
+.pm-invite-row .form-input {
+    flex: 1;
+    font-size: 0.75rem;
+    padding: 0.35rem 0.6rem;
+    color: var(--text-secondary);
+    cursor: text;
+}
+
+/* ================================
+   Phase 4: Time Summary Bar
+   ================================ */
+.time-summary-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+}
+.time-summary-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+}
+.time-summary-label {
+    font-size: 0.68rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.time-summary-value {
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+.time-summary-value.spent { color: var(--info); }
+.time-summary-value.remaining { color: var(--warning); }
+.time-summary-sep {
+    color: var(--text-tertiary);
+    font-size: 0.85rem;
+    padding: 0 0.1rem;
+}
+
+/* Spent row styling */
+.spent-row { background: rgba(59, 130, 246, 0.05); border-radius: var(--radius-sm); padding: 0.5rem; }
+.btn-success {
+    background: var(--success);
+    color: white;
+    border: none;
+}
+.btn-success:hover { filter: brightness(1.1); }
+
+/* Spent hours on card */
+.meta-spent { color: var(--info); font-weight: 600; }
+
+/* Spent log section header */
+.rh-section-header {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0;
+    margin-top: 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-color);
+}
+.sh-hours { color: var(--info) !important; }
+.rh-entry-note {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    flex: 1;
+}
+
+/* ================================
+   Phase 5: Burndown chart enhancements
+   ================================ */
+.burndown-controls {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+}
+.burndown-view-btn {
+    padding: 0.2rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+.burndown-view-btn.active {
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+}
+.burndown-view-btn:hover:not(.active) { background: var(--bg-hover); }
+.burndown-spent-label {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    margin-left: 0.25rem;
 }

@@ -8,9 +8,45 @@ const boardElement = document.getElementById('board');
 const currentProjectName = document.getElementById('currentProjectName');
 const currentBoardName = document.getElementById('currentBoardName');
 
+const updateSprintInfoBar = (board) => {
+    const bar = document.getElementById('sprintInfoBar');
+    if (!bar) return;
+    if (!board) { bar.classList.add('hidden'); return; }
+
+    const goalEl = document.getElementById('sprintGoalDisplay');
+    const datesEl = document.getElementById('sprintDatesDisplay');
+
+    const goal = board.goal?.trim();
+    const start = board.startDate;
+    const end = board.endDate;
+
+    if (goalEl) goalEl.textContent = goal ? `🎯 ${goal}` : '';
+
+    if (datesEl && (start || end)) {
+        const fmt = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '?';
+        const today = new Date(); today.setHours(0,0,0,0);
+        let daysInfo = '';
+        if (end) {
+            const endDate = new Date(end + 'T00:00:00');
+            const diff = Math.round((endDate - today) / 86400000);
+            if (diff < 0) daysInfo = ` · <span style="color:var(--error)">${Math.abs(diff)}d overdue</span>`;
+            else if (diff === 0) daysInfo = ` · <span style="color:var(--warning)">ends today</span>`;
+            else daysInfo = ` · ${diff}d left`;
+        }
+        datesEl.innerHTML = `📅 ${fmt(start)} – ${fmt(end)}${daysInfo}`;
+    } else if (datesEl) {
+        datesEl.textContent = '';
+    }
+
+    const hasContent = goal || start || end;
+    bar.classList.toggle('hidden', !hasContent);
+};
+
 export const renderBoard = () => {
     updateSelectorTexts();
     const board = getCurrentBoard();
+
+    updateSprintInfoBar(board);
 
     if (!boardElement) return;
 
@@ -359,16 +395,39 @@ export const createCardElement = (card, listId) => {
 
     const est = Number(card.initialEstimate) || 0;
     const rem = getEffectiveRemainingHours(card);
-    if (est > 0 || rem > 0) {
+    const spent = (card.spentHoursLog || []).reduce((sum, e) => sum + (Number(e.spentHours) || 0), 0);
+    if (est > 0 || rem > 0 || spent > 0) {
+        const parts = [];
+        if (spent > 0) parts.push(`<span class="meta-spent">${spent}h spent</span>`);
+        if (rem > 0 || est > 0) parts.push(`${rem}h / ${est}h`);
         metaParts.push(`
-            <span class="card-meta-item" title="Remaining / Estimate">
+            <span class="card-meta-item" title="Spent / Remaining / Estimate">
                 <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                ${rem}h / ${est}h
+                ${parts.join(' · ')}
             </span>
         `);
     }
 
-    const metaHtml = metaParts.length ? `<div class="card-meta">${metaParts.join('')}</div>` : '';
+    // Assignee avatar(s)
+    let assigneeHtml = '';
+    if (card.assigneeId) {
+        const board = getCurrentBoard();
+        const allMembers = board ? [board.owner, ...(board.members || [])] : [];
+        const assignee = allMembers.find(m => m?.id === card.assigneeId);
+        if (assignee) {
+            const initials = (assignee.name || assignee.email || 'U').charAt(0).toUpperCase();
+            assigneeHtml = assignee.photoURL
+                ? `<div class="card-assignee" title="${escapeHtml(assignee.name || assignee.email || '')}"><img src="${escapeHtml(assignee.photoURL)}" alt="${escapeHtml(initials)}"></div>`
+                : `<div class="card-assignee" title="${escapeHtml(assignee.name || assignee.email || '')}">${initials}</div>`;
+        }
+    }
+
+    const metaHtml = metaParts.length || assigneeHtml ? `
+        <div class="card-meta">
+            <div class="card-meta-left">${metaParts.join('')}</div>
+            ${assigneeHtml ? `<div class="card-meta-right">${assigneeHtml}</div>` : ''}
+        </div>
+    ` : '';
 
     cardEl.innerHTML = `
         ${labelsHtml}
@@ -618,6 +677,38 @@ const handleCardTouchEnd = (e) => {
 // BURNDOWN CHART
 // ================================
 let burndownChart = null;
+let burndownViewMode = 'team'; // 'team' | 'person'
+
+const PERSON_COLORS = [
+    '#6366f1','#f59e0b','#22c55e','#ef4444','#3b82f6','#8b5cf6','#ec4899','#14b8a6'
+];
+
+const buildBurndownDays = (cards, startDate, endDate) => {
+    const allTimestamps = new Set();
+    cards.forEach(card => {
+        (card.remainingHoursLog || []).forEach(e => allTimestamps.add(e.timestamp));
+    });
+
+    let uniqueDays = [...new Set([...allTimestamps].map(t => t.slice(0, 10)))];
+
+    // Include sprint start/end if available
+    if (startDate) uniqueDays.push(startDate);
+    if (endDate) uniqueDays.push(endDate);
+
+    // Also include today
+    uniqueDays.push(new Date().toISOString().slice(0, 10));
+
+    uniqueDays = [...new Set(uniqueDays)].sort();
+
+    // Only span from earliest log entry to today (or end date)
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const endStr = endDate && endDate <= todayStr ? endDate : todayStr;
+    const minDay = startDate || uniqueDays[0];
+    uniqueDays = uniqueDays.filter(d => d >= minDay && d <= endStr);
+
+    return uniqueDays;
+};
+
 export const updateBurndownChart = () => {
     const board = getCurrentBoard();
     if (!board) return;
@@ -626,52 +717,143 @@ export const updateBurndownChart = () => {
     const allCards = [];
     board.lists.forEach(list => list.cards.forEach(card => allCards.push(card)));
 
-    // Compute current total remaining
+    // Compute current total remaining + spent
     const totalRemaining = allCards.reduce((sum, card) => sum + getEffectiveRemainingHours(card), 0);
+    const totalSpent = allCards.reduce((sum, card) =>
+        sum + (card.spentHoursLog || []).reduce((s, e) => s + (Number(e.spentHours) || 0), 0), 0);
+
     const totalEl = document.getElementById('totalRemainingValue');
     if (totalEl) totalEl.textContent = `${totalRemaining} h`;
-
-    // Build chart data from all log entries using step-function aggregation
-    const allTimestamps = new Set();
-    allCards.forEach(card => {
-        (card.remainingHoursLog || []).forEach(e => allTimestamps.add(e.timestamp));
-    });
+    const spentEl = document.getElementById('totalSpentValue');
+    if (spentEl) spentEl.textContent = `${totalSpent}h`;
 
     const ctx = document.getElementById('burndownChart');
     if (!ctx) return;
-    if (burndownChart) burndownChart.destroy();
+    if (burndownChart) { burndownChart.destroy(); burndownChart = null; }
     if (typeof Chart === 'undefined') return;
 
-    const sortedTimestamps = [...allTimestamps].sort();
-    if (!sortedTimestamps.length) return;
-
-    // Snap to end-of-day for daily view
-    const uniqueDays = [...new Set(sortedTimestamps.map(t => t.slice(0, 10)))];
-    uniqueDays.sort();
+    const uniqueDays = buildBurndownDays(allCards, board.startDate, board.endDate);
+    if (!uniqueDays.length) return;
 
     const chartLabels = uniqueDays.map(d => {
-        const dt = new Date(`${d}T23:59:59.999Z`);
-        return `${dt.getUTCDate()}/${dt.getUTCMonth() + 1}`;
+        const [, m, day] = d.split('-');
+        return `${parseInt(day)}/${parseInt(m)}`;
     });
 
-    const chartData = uniqueDays.map(d => {
-        const endOfDay = new Date(`${d}T23:59:59.999Z`);
-        return allCards.reduce((sum, card) => sum + getEffectiveRemainingHours(card, endOfDay), 0);
-    });
+    const datasets = [];
+
+    if (burndownViewMode === 'team') {
+        // Actual remaining line
+        const actualData = uniqueDays.map(d => {
+            const endOfDay = new Date(`${d}T23:59:59.999Z`);
+            return allCards.reduce((sum, card) => sum + getEffectiveRemainingHours(card, endOfDay), 0);
+        });
+        datasets.push({
+            label: 'Remaining',
+            data: actualData,
+            borderColor: '#6366f1',
+            backgroundColor: 'rgba(99, 102, 241, 0.08)',
+            fill: true,
+            tension: 0.4,
+            pointRadius: 3
+        });
+
+        // Ideal line (from startDate total to 0 at endDate)
+        if (board.startDate && board.endDate) {
+            const startEndOfDay = new Date(`${board.startDate}T23:59:59.999Z`);
+            const totalAtStart = allCards.reduce((sum, card) => sum + getEffectiveRemainingHours(card, startEndOfDay), 0);
+            const sprintDays = uniqueDays.filter(d => d >= board.startDate && d <= board.endDate);
+            if (sprintDays.length > 1 && totalAtStart > 0) {
+                const idealData = uniqueDays.map(d => {
+                    if (d < board.startDate) return null;
+                    if (d > board.endDate) return null;
+                    const dayIdx = sprintDays.indexOf(d);
+                    if (dayIdx < 0) return null;
+                    return Math.max(0, totalAtStart * (1 - dayIdx / (sprintDays.length - 1)));
+                });
+                datasets.push({
+                    label: 'Ideal',
+                    data: idealData,
+                    borderColor: '#94a3b8',
+                    borderDash: [5, 5],
+                    backgroundColor: 'transparent',
+                    fill: false,
+                    tension: 0,
+                    pointRadius: 0
+                });
+            }
+        }
+    } else {
+        // Per-person mode
+        const project = state.projects.find(p => p.id === board.projectId);
+        const allMembers = project ? [
+            ...(project.owner ? [{ ...project.owner }] : []),
+            ...(project.members || [])
+        ] : (board.owner ? [board.owner, ...(board.members || [])] : []);
+
+        // Group cards by assigneeId
+        const assignedCards = {};
+        allCards.forEach(card => {
+            if (card.assigneeId) {
+                if (!assignedCards[card.assigneeId]) assignedCards[card.assigneeId] = [];
+                assignedCards[card.assigneeId].push(card);
+            }
+        });
+
+        let colorIdx = 0;
+        allMembers.forEach(member => {
+            const cards = assignedCards[member.id] || [];
+            if (!cards.length) return;
+            const data = uniqueDays.map(d => {
+                const endOfDay = new Date(`${d}T23:59:59.999Z`);
+                return cards.reduce((sum, card) => sum + getEffectiveRemainingHours(card, endOfDay), 0);
+            });
+            const color = PERSON_COLORS[colorIdx % PERSON_COLORS.length];
+            colorIdx++;
+            datasets.push({
+                label: member.name || member.email,
+                data,
+                borderColor: color,
+                backgroundColor: color + '18',
+                fill: false,
+                tension: 0.4,
+                pointRadius: 3
+            });
+        });
+
+        if (!datasets.length) {
+            datasets.push({
+                label: 'No assigned cards',
+                data: uniqueDays.map(() => 0),
+                borderColor: '#94a3b8',
+                backgroundColor: 'transparent'
+            });
+        }
+    }
 
     burndownChart = new Chart(ctx, {
         type: 'line',
-        data: {
-            labels: chartLabels,
-            datasets: [{
-                label: 'Remaining',
-                data: chartData,
-                borderColor: '#6366f1',
-                backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                fill: true,
-                tension: 0.4
-            }]
-        },
-        options: { responsive: true, maintainAspectRatio: false }
+        data: { labels: chartLabels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: datasets.length > 1, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                tooltip: { mode: 'index', intersect: false }
+            },
+            scales: {
+                y: { beginAtZero: true, title: { display: true, text: 'Hours' } },
+                x: { title: { display: false } }
+            }
+        }
+    });
+
+    // Wire view toggle buttons
+    document.querySelectorAll('.burndown-view-btn').forEach(btn => {
+        btn.onclick = () => {
+            burndownViewMode = btn.dataset.view;
+            document.querySelectorAll('.burndown-view-btn').forEach(b => b.classList.toggle('active', b === btn));
+            updateBurndownChart();
+        };
     });
 };

@@ -154,10 +154,76 @@
                             style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)"></button>
                     </div>
                 </div>
+                <div class="form-group">
+                    <label for="boardGoal">Sprint Goal <span class="label-optional">(optional)</span></label>
+                    <input type="text" id="boardGoal" placeholder="What will this sprint accomplish?" class="form-input">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="boardStartDate">Start Date</label>
+                        <input type="date" id="boardStartDate" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="boardEndDate">End Date</label>
+                        <input type="date" id="boardEndDate" class="form-input">
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="cancelBoardBtn">Cancel</button>
-                <button class="btn btn-primary" id="saveBoardBtn">Create Board</button>
+                <button class="btn btn-primary" id="saveBoardBtn">Create Sprint</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sprint Edit Modal -->
+    <div class="modal-overlay" id="sprintEditModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Sprint Settings</h2>
+                <button class="modal-close" id="closeSprintEditModal">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="sprintEditName">Sprint Name</label>
+                    <input type="text" id="sprintEditName" class="form-input" placeholder="Sprint name...">
+                </div>
+                <div class="form-group">
+                    <label for="sprintEditGoal">Sprint Goal</label>
+                    <input type="text" id="sprintEditGoal" class="form-input" placeholder="What will this sprint accomplish?">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="sprintEditStart">Start Date</label>
+                        <input type="date" id="sprintEditStart" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="sprintEditEnd">End Date</label>
+                        <input type="date" id="sprintEditEnd" class="form-input">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelSprintEditBtn">Cancel</button>
+                <button class="btn btn-primary" id="saveSprintEditBtn">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sprint Picker Modal (move backlog item to sprint) -->
+    <div class="modal-overlay" id="sprintPickerModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Move to Sprint</h2>
+                <button class="modal-close" id="closeSprintPickerModal">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom:1rem;color:var(--text-secondary)">Select a sprint to add this item to:</p>
+                <div id="sprintPickerList" class="sprint-picker-list"></div>
             </div>
         </div>
     </div>
@@ -348,6 +414,24 @@
                             </svg>
                             Time Tracking
                         </h3>
+                        <!-- Time summary bar -->
+                        <div class="time-summary-bar" id="timeSummaryBar">
+                            <div class="time-summary-item">
+                                <span class="time-summary-label">Estimate</span>
+                                <span class="time-summary-value" id="tsSummaryEst">—</span>
+                            </div>
+                            <div class="time-summary-sep">→</div>
+                            <div class="time-summary-item">
+                                <span class="time-summary-label">Spent</span>
+                                <span class="time-summary-value spent" id="tsSummarySpent">0h</span>
+                            </div>
+                            <div class="time-summary-sep">|</div>
+                            <div class="time-summary-item">
+                                <span class="time-summary-label">Remaining</span>
+                                <span class="time-summary-value remaining" id="tsSummaryRemaining">—</span>
+                            </div>
+                        </div>
+                        <!-- Log remaining hours row -->
                         <div class="time-tracking-row">
                             <div class="time-input-group">
                                 <label for="cardInitialEstimate">Initial Estimate (hrs)</label>
@@ -362,7 +446,23 @@
                                 <label for="rhNewTimestamp">Date &amp; Time</label>
                                 <input type="datetime-local" id="rhNewTimestamp" class="form-input">
                             </div>
-                            <button class="btn btn-sm btn-primary rh-add-btn" id="rhAddEntryBtn">Add</button>
+                            <button class="btn btn-sm btn-primary rh-add-btn" id="rhAddEntryBtn">Log Remaining</button>
+                        </div>
+                        <!-- Log spent hours row -->
+                        <div class="time-tracking-row spent-row">
+                            <div class="time-input-group">
+                                <label for="shNewHours">Spent (hrs)</label>
+                                <input type="number" id="shNewHours" class="form-input" min="0.5" step="0.5" placeholder="0">
+                            </div>
+                            <div class="time-input-group">
+                                <label for="shNewTimestamp">Date &amp; Time</label>
+                                <input type="datetime-local" id="shNewTimestamp" class="form-input">
+                            </div>
+                            <div class="time-input-group" style="flex:2">
+                                <label for="shNewNote">Note (optional)</label>
+                                <input type="text" id="shNewNote" class="form-input" placeholder="What did you work on?">
+                            </div>
+                            <button class="btn btn-sm btn-success rh-add-btn" id="shAddEntryBtn">Log Time</button>
                         </div>
                         <!-- History toggle -->
                         <button class="rh-history-toggle" id="rhHistoryToggle">
@@ -378,6 +478,10 @@
                                 <canvas id="cardRemainingChart"></canvas>
                             </div>
                             <div class="rh-log-list" id="rhLogList"></div>
+                            <div class="rh-section-header" id="shSectionHeader" style="display:none">
+                                <span>⏱ Spent Time Log</span>
+                            </div>
+                            <div class="rh-log-list" id="shLogList"></div>
                         </div>
                     </div>
                 </div>
@@ -457,6 +561,16 @@
 
     <!-- Main Board Area -->
     <main class="board-container" id="boardContainer">
+        <div class="sprint-info-bar hidden" id="sprintInfoBar">
+            <div class="sprint-info-content">
+                <span class="sprint-goal-text" id="sprintGoalDisplay"></span>
+                <span class="sprint-dates-text" id="sprintDatesDisplay"></span>
+            </div>
+            <button class="btn btn-sm btn-secondary" id="editSprintPropsBtn">
+                <svg viewBox="0 0 24 24" fill="none" style="width:14px;height:14px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                Edit Sprint
+            </button>
+        </div>
         <div class="board" id="board">
             <!-- Lists will be dynamically added here -->
         </div>
@@ -676,8 +790,13 @@
     <div class="burndown-panel" id="burndownPanel" style="display: none;">
         <div class="burndown-header" id="burndownHeader">
             <div class="burndown-info">
-                <span class="burndown-label">Total Remaining Work</span>
+                <span class="burndown-label">Remaining Work</span>
                 <span class="burndown-value" id="totalRemainingValue">0h</span>
+                <span class="burndown-spent-label">· <span id="totalSpentValue">0h</span> spent</span>
+            </div>
+            <div class="burndown-controls">
+                <button class="burndown-view-btn active" id="bdViewTeam" data-view="team" title="Team burndown">Team</button>
+                <button class="burndown-view-btn" id="bdViewPerson" data-view="person" title="Per-person burndown">Per Person</button>
             </div>
             <button class="burndown-toggle">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -715,6 +834,14 @@
                 <ul id="pmProjectList" class="pm-project-list">
                     <!-- Projects will be dynamically listed here -->
                 </ul>
+                <div class="pm-add-project-form hidden" id="pmAddProjectForm">
+                    <input type="text" id="pmNewProjectName" placeholder="Project name..." class="form-input" style="margin-bottom:0.5rem">
+                    <input type="text" id="pmNewProjectDesc" placeholder="Description (optional)" class="form-input" style="margin-bottom:0.5rem">
+                    <div class="form-actions" style="display:flex;gap:0.5rem">
+                        <button class="btn btn-sm btn-primary" id="pmSaveProjectBtn">Create</button>
+                        <button class="btn btn-sm btn-secondary" id="pmCancelProjectBtn">Cancel</button>
+                    </div>
+                </div>
             </div>
             <div class="pm-content">
                 <div id="pmNoProjectSelected" class="empty-state">
@@ -733,6 +860,15 @@
                     <div class="pm-header">
                         <div class="pm-title-section">
                             <h2 id="pmProjectName">Project Name</h2>
+                            <p id="pmProjectDesc" class="pm-project-desc" style="color:var(--text-secondary);font-size:0.875rem;margin-top:0.25rem"></p>
+                            <div class="pm-edit-project-form hidden" id="pmEditProjectForm">
+                                <input type="text" id="pmEditProjectName" class="form-input" style="margin-bottom:0.5rem" placeholder="Project name">
+                                <input type="text" id="pmEditProjectDesc" class="form-input" style="margin-bottom:0.5rem" placeholder="Description (optional)">
+                                <div class="form-actions" style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
+                                    <button class="btn btn-sm btn-primary" id="pmSaveEditProjectBtn">Save</button>
+                                    <button class="btn btn-sm btn-secondary" id="pmCancelEditProjectBtn">Cancel</button>
+                                </div>
+                            </div>
                             <button class="btn-icon edit-project-btn" id="editProjectBtn">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                     stroke-linecap="round" stroke-linejoin="round">
@@ -797,8 +933,16 @@
                                     Add Member
                                 </button>
                             </div>
+                            <div id="pmAddMemberForm" class="pm-add-member-form hidden">
+                                <input type="email" id="pmMemberEmailInput" placeholder="Enter member email..." />
+                                <button class="btn btn-primary btn-sm" id="pmSaveMemberBtn">Add</button>
+                                <button class="btn btn-secondary btn-sm" id="pmCancelMemberBtn">Cancel</button>
+                            </div>
                             <div class="pm-team-list" id="pmTeamList">
                                 <!-- Team members -->
+                            </div>
+                            <div id="pmInviteSection" class="pm-invite-section hidden">
+                                <!-- Invite link rendered by renderTeam() -->
                             </div>
                         </div>
                     </div>

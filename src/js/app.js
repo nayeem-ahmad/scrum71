@@ -279,8 +279,22 @@ window.addEventListener('openCardModal', (e) => openCardModal(e.detail));
 
 let cardRemainingChart = null;
 
+const renderTimeSummaryBar = (card) => {
+    const est = Number(card.initialEstimate) || 0;
+    const rem = getEffectiveRemainingHours(card);
+    const totalSpent = (card.spentHoursLog || []).reduce((sum, e) => sum + (Number(e.spentHours) || 0), 0);
+
+    const estEl = document.getElementById('tsSummaryEst');
+    const spentEl = document.getElementById('tsSummarySpent');
+    const remEl = document.getElementById('tsSummaryRemaining');
+    if (estEl) estEl.textContent = est > 0 ? `${est}h` : '—';
+    if (spentEl) spentEl.textContent = `${totalSpent}h`;
+    if (remEl) remEl.textContent = rem > 0 ? `${rem}h` : '—';
+};
+
 const renderRemainingHoursTab = (card) => {
     if (!card.remainingHoursLog) card.remainingHoursLog = [];
+    if (!card.spentHoursLog) card.spentHoursLog = [];
 
     // Always collapse history panel when modal opens
     const panel = document.getElementById('rhHistoryPanel');
@@ -290,11 +304,14 @@ const renderRemainingHoursTab = (card) => {
     if (label) label.textContent = 'Show history';
     if (toggle) toggle.classList.remove('open');
 
-    // Set default timestamp to now
+    // Set default timestamps to now
+    const now = new Date().toISOString().slice(0, 16);
     const tsInput = document.getElementById('rhNewTimestamp');
-    if (tsInput) {
-        tsInput.value = new Date().toISOString().slice(0, 16);
-    }
+    if (tsInput) tsInput.value = now;
+    const shTsInput = document.getElementById('shNewTimestamp');
+    if (shTsInput) shTsInput.value = now;
+
+    renderTimeSummaryBar(card);
 };
 
 document.getElementById('rhHistoryToggle')?.addEventListener('click', () => {
@@ -310,6 +327,7 @@ document.getElementById('rhHistoryToggle')?.addEventListener('click', () => {
         if (toggle) toggle.classList.add('open');
         renderRhLogList(card);
         renderCardRemainingChart(card);
+        renderShLogList(card);
     } else {
         panel.classList.add('hidden');
         if (label) label.textContent = 'Show history';
@@ -471,7 +489,93 @@ document.getElementById('rhAddEntryBtn')?.addEventListener('click', () => {
     renderBoard();
     renderRhLogList(card);
     renderCardRemainingChart(card);
+    renderTimeSummaryBar(card);
     showToast('Entry added', 'success');
+});
+
+// ================================
+// SPENT HOURS LOG
+// ================================
+const renderShLogList = (card) => {
+    const container = document.getElementById('shLogList');
+    const header = document.getElementById('shSectionHeader');
+    if (!container) return;
+
+    const log = [...(card.spentHoursLog || [])];
+    log.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    if (!log.length) {
+        if (header) header.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+    if (header) header.style.display = 'flex';
+
+    container.innerHTML = log.map(entry => {
+        const dt = new Date(entry.timestamp);
+        const dateStr = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        const timeStr = dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        const noteHtml = entry.note ? `<span class="rh-entry-note">${escapeHtml(entry.note)}</span>` : '';
+        return `
+        <div class="rh-entry sh-entry" data-entry-id="${escapeHtml(entry.id)}">
+            <div class="rh-entry-view">
+                <span class="rh-entry-hours sh-hours">+${entry.spentHours}h</span>
+                <span class="rh-entry-date">${dateStr} ${timeStr}</span>
+                ${noteHtml}
+                <div class="rh-entry-actions">
+                    <button class="rh-delete-btn sh-delete-btn" title="Delete">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    container.querySelectorAll('.sh-delete-btn').forEach(btn => {
+        const entryId = btn.closest('.sh-entry')?.dataset.entryId;
+        btn.addEventListener('click', () => {
+            card.spentHoursLog = (card.spentHoursLog || []).filter(e => e.id !== entryId);
+            saveState();
+            renderBoard();
+            renderShLogList(card);
+            renderTimeSummaryBar(card);
+        });
+    });
+};
+
+document.getElementById('shAddEntryBtn')?.addEventListener('click', () => {
+    const card = getEditingCard();
+    if (!card) return;
+    const hoursVal = document.getElementById('shNewHours').value;
+    const tsVal = document.getElementById('shNewTimestamp').value;
+    const note = document.getElementById('shNewNote').value.trim();
+    if (hoursVal === '' || !tsVal) {
+        showToast('Enter hours and timestamp', 'error');
+        return;
+    }
+    const hours = parseFloat(hoursVal);
+    if (isNaN(hours) || hours <= 0) {
+        showToast('Enter a valid hours value (> 0)', 'error');
+        return;
+    }
+    if (!card.spentHoursLog) card.spentHoursLog = [];
+    card.spentHoursLog.push({
+        id: generateId(),
+        spentHours: hours,
+        timestamp: new Date(tsVal).toISOString(),
+        note: note || null
+    });
+    document.getElementById('shNewHours').value = '';
+    document.getElementById('shNewNote').value = '';
+    document.getElementById('shNewTimestamp').value = new Date().toISOString().slice(0, 16);
+    saveState();
+    renderBoard();
+    renderTimeSummaryBar(card);
+    // If history panel open, refresh it
+    if (!document.getElementById('rhHistoryPanel')?.classList.contains('hidden')) {
+        renderShLogList(card);
+    }
+    showToast('Time logged!', 'success');
 });
 
 document.getElementById('closeCardModal')?.addEventListener('click', closeCardModal);
@@ -517,9 +621,128 @@ window.addEventListener('newUserNoBoards', () => {
 });
 
 // Board Creation
+const openBoardModal = (presetProjectId = null) => {
+    const today = new Date().toISOString().split('T')[0];
+    const twoWeeks = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+    const nameInput = document.getElementById('boardName');
+    const goalInput = document.getElementById('boardGoal');
+    const startInput = document.getElementById('boardStartDate');
+    const endInput = document.getElementById('boardEndDate');
+    if (nameInput) nameInput.value = '';
+    if (goalInput) goalInput.value = '';
+    if (startInput) startInput.value = today;
+    if (endInput) endInput.value = twoWeeks;
+    const modal = document.getElementById('boardModal');
+    if (modal) {
+        modal.dataset.presetProjectId = presetProjectId || state.currentProjectId || '';
+        modal.classList.add('active');
+    }
+};
+
 document.getElementById('createBoardBtn')?.addEventListener('click', () => {
-    document.getElementById('boardModal').classList.add('active');
+    openBoardModal();
     document.getElementById('boardSelector').classList.remove('active');
+});
+
+window.addEventListener('openBoardModal', (e) => openBoardModal(e.detail?.projectId));
+
+document.getElementById('saveBoardBtn')?.addEventListener('click', () => {
+    const name = document.getElementById('boardName')?.value.trim();
+    if (!name) { showToast('Enter a board name', 'error'); return; }
+
+    const modal = document.getElementById('boardModal');
+    const projectId = modal?.dataset.presetProjectId || state.currentProjectId || null;
+    const goal = document.getElementById('boardGoal')?.value.trim() || '';
+    const startDate = document.getElementById('boardStartDate')?.value || '';
+    const endDate = document.getElementById('boardEndDate')?.value || '';
+    const background = document.querySelector('#boardModal .color-option.selected')?.dataset.color
+        || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+
+    const user = state.projects.find(p => p.id === projectId)?.owner
+        || { id: generateId(), name: 'You', email: 'you@example.com', photoURL: null };
+
+    const board = {
+        id: generateId(),
+        name,
+        background,
+        goal,
+        startDate,
+        endDate,
+        projectId,
+        owner: user,
+        members: [],
+        lists: [
+            { id: generateId(), title: 'To Do', cards: [] },
+            { id: generateId(), title: 'In Progress', cards: [] },
+            { id: generateId(), title: 'Done', cards: [] },
+        ],
+        history: [],
+        createdAt: new Date().toISOString(),
+    };
+
+    state.boards.push(board);
+    state.currentBoardId = board.id;
+
+    // Associate board with project
+    if (projectId) {
+        const project = state.projects.find(p => p.id === projectId);
+        if (project) {
+            if (!project.sprintIds) project.sprintIds = [];
+            project.sprintIds.push(board.id);
+            if (!project.owner) project.owner = user;
+            // Ensure board owner is in project members
+            const emails = [project.owner?.email, ...(project.members || []).map(m => m.email)].filter(Boolean);
+            if (!emails.includes(user.email)) {
+                project.members = project.members || [];
+                project.members.push({ ...user, role: 'member', addedAt: new Date().toISOString() });
+            }
+        }
+    }
+
+    saveState();
+    renderBoard();
+    document.getElementById('boardModal').classList.remove('active');
+    showToast(`Sprint "${name}" created`, 'success');
+});
+
+document.getElementById('cancelBoardBtn')?.addEventListener('click', () => {
+    document.getElementById('boardModal').classList.remove('active');
+});
+
+// Color picker in board modal
+document.querySelectorAll('#boardModal .color-option').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('#boardModal .color-option').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+    });
+});
+
+// Sprint edit modal (opened from sprint info bar)
+document.getElementById('editSprintPropsBtn')?.addEventListener('click', () => {
+    const board = getCurrentBoard();
+    if (!board) return;
+    document.getElementById('sprintEditName').value = board.name || '';
+    document.getElementById('sprintEditGoal').value = board.goal || '';
+    document.getElementById('sprintEditStart').value = board.startDate || '';
+    document.getElementById('sprintEditEnd').value = board.endDate || '';
+    document.getElementById('sprintEditModal').classList.add('active');
+});
+
+document.getElementById('saveSprintEditBtn')?.addEventListener('click', () => {
+    const board = getCurrentBoard();
+    if (!board) return;
+    board.name = document.getElementById('sprintEditName').value.trim() || board.name;
+    board.goal = document.getElementById('sprintEditGoal').value.trim();
+    board.startDate = document.getElementById('sprintEditStart').value;
+    board.endDate = document.getElementById('sprintEditEnd').value;
+    saveState();
+    renderBoard();
+    document.getElementById('sprintEditModal').classList.remove('active');
+    showToast('Sprint updated', 'success');
+});
+
+document.getElementById('cancelSprintEditBtn')?.addEventListener('click', () => {
+    document.getElementById('sprintEditModal').classList.remove('active');
 });
 
 // Close modals
