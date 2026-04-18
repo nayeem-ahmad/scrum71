@@ -3690,3 +3690,28 @@ button {
     color: var(--text-tertiary);
     margin-left: 0.25rem;
 }
+
+/* ================================
+   Delete project confirmation
+   ================================ */
+.pm-delete-confirm {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    padding: 0.65rem 0.9rem;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: var(--radius-md);
+    margin: 0.5rem 0;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+.pm-delete-confirm.hidden { display: none; }
+.pm-delete-confirm span { flex: 1; min-width: 0; }
+.btn-danger {
+    background: var(--error);
+    color: white;
+    border: none;
+}
+.btn-danger:hover { filter: brightness(1.1); }

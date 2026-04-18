@@ -311,6 +311,15 @@ export const renderProjectManagement = () => {
     }
 };
 
+const isProjectOwner = (project) => {
+    const currentUser = getCurrentUser();
+    if (!currentUser) {
+        // Fallback: check if owner id matches the 'You' placeholder used in local/sample data
+        return project.owner?.email === 'you@example.com' || !project.owner;
+    }
+    return project.owner?.email === currentUser.email || project.owner?.id === currentUser.uid;
+};
+
 const renderProjectDetails = () => {
     const project = state.projects.find(p => p.id === state.currentProjectId);
     if (!project) return;
@@ -321,9 +330,20 @@ const renderProjectDetails = () => {
     const descEl = document.getElementById('pmProjectDesc');
     if (descEl) descEl.textContent = project.description || '';
 
-    // Ensure edit form is hidden
+    // Ensure edit form and delete confirm are hidden
     document.getElementById('pmEditProjectForm')?.classList.add('hidden');
     document.getElementById('editProjectBtn')?.classList.remove('hidden');
+    document.getElementById('pmDeleteConfirm')?.classList.add('hidden');
+
+    // Show delete button only for owner
+    const deleteBtn = document.getElementById('deleteProjectBtn');
+    if (deleteBtn) {
+        if (isProjectOwner(project)) {
+            deleteBtn.classList.remove('hidden');
+        } else {
+            deleteBtn.classList.add('hidden');
+        }
+    }
 
     const activeTab = document.querySelector('.pm-tab.active')?.dataset.tab || 'backlog';
     renderProjectTab(activeTab);
@@ -694,6 +714,53 @@ document.getElementById('pmMemberEmailInput')?.addEventListener('keydown', (e) =
         document.getElementById('pmAddMemberForm')?.classList.add('hidden');
         e.target.value = '';
     }
+});
+
+// --------------------------------
+// Delete project (owner only)
+// --------------------------------
+document.getElementById('deleteProjectBtn')?.addEventListener('click', () => {
+    const project = state.projects.find(p => p.id === state.currentProjectId);
+    if (!project || !isProjectOwner(project)) return;
+    // Show inline confirmation
+    document.getElementById('pmDeleteProjectName').textContent = project.name;
+    document.getElementById('pmDeleteConfirm').classList.remove('hidden');
+    document.getElementById('deleteProjectBtn').classList.add('hidden');
+    document.getElementById('editProjectBtn').classList.add('hidden');
+});
+
+document.getElementById('pmCancelDeleteBtn')?.addEventListener('click', () => {
+    document.getElementById('pmDeleteConfirm').classList.add('hidden');
+    document.getElementById('deleteProjectBtn').classList.remove('hidden');
+    document.getElementById('editProjectBtn').classList.remove('hidden');
+});
+
+document.getElementById('pmConfirmDeleteBtn')?.addEventListener('click', () => {
+    const project = state.projects.find(p => p.id === state.currentProjectId);
+    if (!project || !isProjectOwner(project)) return;
+
+    const projectName = project.name;
+    const sprintIds = project.sprintIds || [];
+
+    // Remove all associated boards/sprints
+    state.boards = state.boards.filter(b => !sprintIds.includes(b.id));
+
+    // Remove the project
+    state.projects = state.projects.filter(p => p.id !== project.id);
+
+    // Reset current selections if they pointed to deleted data
+    if (state.currentProjectId === project.id) {
+        state.currentProjectId = state.projects[0]?.id || null;
+        const firstBoard = state.currentProjectId
+            ? state.boards.find(b => b.projectId === state.currentProjectId)
+            : state.boards[0];
+        state.currentBoardId = firstBoard?.id || null;
+    }
+
+    saveState();
+    renderBoard();
+    renderProjectManagement();
+    showToast(`"${projectName}" deleted`, 'success');
 });
 
 // --------------------------------
