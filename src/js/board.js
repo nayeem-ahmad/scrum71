@@ -857,3 +857,17 @@ export const updateBurndownChart = () => {
         };
     });
 };
+
+// Burndown panel collapse/expand
+(() => {
+    const panel = document.getElementById('burndownPanel');
+    const toggleBtn = panel?.querySelector('.burndown-toggle');
+    const chartContainer = panel?.querySelector('.burndown-chart-container');
+    if (!toggleBtn || !chartContainer) return;
+    let collapsed = false;
+    toggleBtn.addEventListener('click', () => {
+        collapsed = !collapsed;
+        chartContainer.style.display = collapsed ? 'none' : '';
+        toggleBtn.style.transform = collapsed ? 'rotate(180deg)' : '';
+    });
+})();

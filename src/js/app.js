@@ -611,6 +611,92 @@ document.getElementById('cardModal')?.addEventListener('click', (e) => {
     if (e.target.id === 'cardModal') closeCardModal();
 });
 
+// ================================
+// SEARCH
+// ================================
+const openSearch = () => {
+    document.getElementById('searchModal').classList.add('active');
+    document.getElementById('searchInput').focus();
+    document.getElementById('searchResults').innerHTML =
+        '<div class="search-empty">Start typing to search cards...</div>';
+};
+
+const closeSearch = () => {
+    document.getElementById('searchModal').classList.remove('active');
+    document.getElementById('searchInput').value = '';
+};
+
+document.getElementById('searchBtn')?.addEventListener('click', openSearch);
+
+document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        openSearch();
+    }
+    if (e.key === 'Escape' && document.getElementById('searchModal')?.classList.contains('active')) {
+        closeSearch();
+    }
+});
+
+document.getElementById('searchModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'searchModal') closeSearch();
+});
+
+document.getElementById('searchInput')?.addEventListener('input', (e) => {
+    const query = e.target.value.trim().toLowerCase();
+    const resultsEl = document.getElementById('searchResults');
+    if (!query) {
+        resultsEl.innerHTML = '<div class="search-empty">Start typing to search cards...</div>';
+        return;
+    }
+
+    const matches = [];
+    state.boards.forEach(board => {
+        board.lists.forEach(list => {
+            list.cards.forEach(card => {
+                if (
+                    card.title.toLowerCase().includes(query) ||
+                    (card.description || '').toLowerCase().includes(query)
+                ) {
+                    matches.push({ board, list, card });
+                }
+            });
+        });
+    });
+
+    if (!matches.length) {
+        resultsEl.innerHTML = '<div class="search-empty">No cards found.</div>';
+        return;
+    }
+
+    resultsEl.innerHTML = matches.map(({ board, list, card }) => `
+        <div class="search-result-item" data-board-id="${board.id}" data-list-id="${list.id}" data-card-id="${card.id}">
+            <div class="search-result-icon">
+                <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 9h10M7 13h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div class="search-result-content">
+                <div class="search-result-title">${escapeHtml(card.title)}</div>
+                <div class="search-result-meta">${escapeHtml(board.name)} · ${escapeHtml(list.title)}</div>
+            </div>
+        </div>
+    `).join('');
+
+    resultsEl.querySelectorAll('.search-result-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const { boardId, listId, cardId } = el.dataset;
+            closeSearch();
+            if (state.currentBoardId !== boardId) {
+                state.currentBoardId = boardId;
+                saveState();
+                renderBoard();
+            }
+            setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('openCardModal', { detail: { cardId, listId } }));
+            }, 50);
+        });
+    });
+});
+
 window.addEventListener('newUserNoBoards', () => {
     const modal = document.getElementById('boardModal');
     if (modal) {
@@ -725,11 +811,16 @@ document.getElementById('editSprintPropsBtn')?.addEventListener('click', () => {
     document.getElementById('sprintEditGoal').value = board.goal || '';
     document.getElementById('sprintEditStart').value = board.startDate || '';
     document.getElementById('sprintEditEnd').value = board.endDate || '';
-    document.getElementById('sprintEditModal').classList.add('active');
+    const modal = document.getElementById('sprintEditModal');
+    if (modal) { modal.dataset.sprintId = board.id; modal.classList.add('active'); }
 });
 
 document.getElementById('saveSprintEditBtn')?.addEventListener('click', () => {
-    const board = getCurrentBoard();
+    const modal = document.getElementById('sprintEditModal');
+    const sprintId = modal?.dataset.sprintId;
+    const board = sprintId
+        ? state.boards.find(b => b.id === sprintId)
+        : getCurrentBoard();
     if (!board) return;
     board.name = document.getElementById('sprintEditName').value.trim() || board.name;
     board.goal = document.getElementById('sprintEditGoal').value.trim();
@@ -737,7 +828,7 @@ document.getElementById('saveSprintEditBtn')?.addEventListener('click', () => {
     board.endDate = document.getElementById('sprintEditEnd').value;
     saveState();
     renderBoard();
-    document.getElementById('sprintEditModal').classList.remove('active');
+    modal.classList.remove('active');
     showToast('Sprint updated', 'success');
 });
 
