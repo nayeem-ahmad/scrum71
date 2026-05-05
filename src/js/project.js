@@ -493,9 +493,19 @@ const renderBacklog = (project) => {
                     <span class="backlog-item-title">${esc(task.title)}</span>
                     ${badge}
                 </div>
+                <div class="backlog-item-edit hidden">
+                    <input type="text" class="form-input backlog-edit-input" value="${esc(task.title)}" style="margin-bottom:0.25rem">
+                    <div style="display:flex;gap:0.4rem">
+                        <button class="btn btn-sm btn-primary backlog-save-edit-btn">Save</button>
+                        <button class="btn btn-sm btn-secondary backlog-cancel-edit-btn">Cancel</button>
+                    </div>
+                </div>
                 <div class="backlog-item-date">${fmt(task.addedAt)}</div>
             </div>
             <div class="backlog-item-actions">
+                <button class="btn-icon edit-backlog-btn" data-id="${task.id}" title="Edit">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </button>
                 <button class="btn-icon move-sprint-btn" data-id="${task.id}" title="Move to Sprint">
                     <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
@@ -506,6 +516,39 @@ const renderBacklog = (project) => {
         </div>
         `;
     }).join('');
+
+    // Inline edit
+    listEl.querySelectorAll('.edit-backlog-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const item = btn.closest('.backlog-item');
+            item.querySelector('.backlog-item-title-row').classList.add('hidden');
+            item.querySelector('.backlog-item-edit').classList.remove('hidden');
+            item.querySelector('.backlog-edit-input').focus();
+        });
+    });
+
+    listEl.querySelectorAll('.backlog-cancel-edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const item = btn.closest('.backlog-item');
+            item.querySelector('.backlog-item-title-row').classList.remove('hidden');
+            item.querySelector('.backlog-item-edit').classList.add('hidden');
+        });
+    });
+
+    listEl.querySelectorAll('.backlog-save-edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const item = btn.closest('.backlog-item');
+            const taskId = item.dataset.id;
+            const newTitle = item.querySelector('.backlog-edit-input').value.trim();
+            if (!newTitle) return;
+            const task = (project.backlog || []).find(t => t.id === taskId);
+            if (task) {
+                task.title = newTitle;
+                saveState();
+                renderBacklog(project);
+            }
+        });
+    });
 
     // Move to sprint
     listEl.querySelectorAll('.move-sprint-btn').forEach(btn => {
