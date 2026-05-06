@@ -1,4 +1,4 @@
-import { state, getCurrentBoard, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentUser } from './store.js';
+import { state, getCurrentBoard, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentUser, createList, updateListTitle, deleteList, reorderLists, createCard, updateCard, deleteCard, moveCard } from './store.js';
 import { generateId, showToast, getDragAfterElement, getEffectiveRemainingHours } from './utils.js';
 
 // ================================
@@ -102,13 +102,18 @@ export const renderBoard = () => {
         addListInput.value = '';
     });
 
-    saveBtn.addEventListener('click', () => {
+    saveBtn.addEventListener('click', async () => {
         const title = addListInput.value.trim();
         if (title) {
-            board.lists.push({ id: generateId(), title, cards: [] });
-            saveState();
-            renderBoard();
-            showToast('List added!', 'success');
+            try {
+                const board = getCurrentBoard();
+                await createList(board.id, title);
+                renderBoard();
+                showToast('List added!', 'success');
+            } catch (error) {
+                console.error('Error creating list:', error);
+                showToast('Failed to create list', 'error');
+            }
         }
     });
 
@@ -191,11 +196,18 @@ export const createListElement = (list) => {
     // For brevity, assuming similar logic as original app.js, implemented here:
     // List title editing
     const titleInput = listEl.querySelector('.list-title');
-    titleInput.addEventListener('blur', () => {
+    titleInput.addEventListener('blur', async () => {
         const newTitle = titleInput.value.trim();
         if (newTitle && newTitle !== list.title) {
-            list.title = newTitle;
-            saveState();
+            try {
+                const board = getCurrentBoard();
+                await updateListTitle(board.id, list.id, newTitle);
+                list.title = newTitle;
+            } catch (error) {
+                console.error('Error updating list title:', error);
+                titleInput.value = list.title;
+                showToast('Failed to update list title', 'error');
+            }
         } else {
             titleInput.value = list.title;
         }
@@ -218,42 +230,90 @@ export const createListElement = (list) => {
     });
 
     // List Actions
-    listEl.querySelector('.move-list-left').addEventListener('click', () => {
+    listEl.querySelector('.move-list-left').addEventListener('click', async () => {
+        const board = getCurrentBoard();
         const idx = board.lists.indexOf(list);
         if (idx > 0) {
-            [board.lists[idx - 1], board.lists[idx]] = [board.lists[idx], board.lists[idx - 1]];
-            saveState(); renderBoard();
+            try {
+                const newOrder = [...board.lists.map(l => l.id)];
+                [newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]];
+                await reorderLists(board.id, newOrder);
+                renderBoard();
+            } catch (error) {
+                console.error('Error moving list left:', error);
+                showToast('Failed to move list', 'error');
+            }
         }
     });
 
-    listEl.querySelector('.move-list-right').addEventListener('click', () => {
+    listEl.querySelector('.move-list-right').addEventListener('click', async () => {
+        const board = getCurrentBoard();
         const idx = board.lists.indexOf(list);
         if (idx < board.lists.length - 1) {
-            [board.lists[idx], board.lists[idx + 1]] = [board.lists[idx + 1], board.lists[idx]];
-            saveState(); renderBoard();
+            try {
+                const newOrder = [...board.lists.map(l => l.id)];
+                [newOrder[idx], newOrder[idx + 1]] = [newOrder[idx + 1], newOrder[idx]];
+                await reorderLists(board.id, newOrder);
+                renderBoard();
+            } catch (error) {
+                console.error('Error moving list right:', error);
+                showToast('Failed to move list', 'error');
+            }
         }
     });
 
-    listEl.querySelector('.copy-list').addEventListener('click', () => {
-        const newList = JSON.parse(JSON.stringify(list));
-        newList.id = generateId();
-        newList.title = `${list.title} (copy)`;
-        newList.cards.forEach(c => c.id = generateId());
-        board.lists.splice(board.lists.indexOf(list) + 1, 0, newList);
-        saveState(); renderBoard();
+    listEl.querySelector('.copy-list').addEventListener('click', async () => {
+        const board = getCurrentBoard();
+        try {
+            const newList = JSON.parse(JSON.stringify(list));
+            newList.id = generateId();
+            newList.title = `${list.title} (copy)`;
+            newList.cards.forEach(c => c.id = generateId());
+            
+            // Create the copied list
+            await createList(board.id, newList.title);
+            
+            // Add copied cards to the new list
+            for (const card of list.cards) {
+                await createCard(board.id, newList.id, card.title, card.description);
+            }
+            
+            renderBoard();
+            showToast('List copied!', 'success');
+        } catch (error) {
+            console.error('Error copying list:', error);
+            showToast('Failed to copy list', 'error');
+        }
     });
 
-    listEl.querySelector('.delete-list').addEventListener('click', () => {
+    listEl.querySelector('.delete-list').addEventListener('click', async () => {
         if (confirm('Delete list?')) {
-            board.lists = board.lists.filter(l => l.id !== list.id);
-            saveState(); renderBoard();
+            try {
+                const board = getCurrentBoard();
+                await deleteList(board.id, list.id);
+                renderBoard();
+                showToast('List deleted!', 'success');
+            } catch (error) {
+                console.error('Error deleting list:', error);
+                showToast('Failed to delete list', 'error');
+            }
         }
     });
 
-    listEl.querySelector('.clear-list').addEventListener('click', () => {
+    listEl.querySelector('.clear-list').addEventListener('click', async () => {
         if (confirm('Clear all cards in this list?')) {
-            list.cards = [];
-            saveState(); renderBoard();
+            try {
+                const board = getCurrentBoard();
+                // Delete all cards in the list
+                for (const card of [...list.cards]) {
+                    await deleteCard(board.id, list.id, card.id);
+                }
+                renderBoard();
+                showToast('List cleared!', 'success');
+            } catch (error) {
+                console.error('Error clearing list:', error);
+                showToast('Failed to clear list', 'error');
+            }
         }
     });
 
@@ -276,29 +336,27 @@ export const createListElement = (list) => {
         addCardInput.value = '';
     });
 
-    saveCardBtn.addEventListener('click', () => {
+    saveCardBtn.addEventListener('click', async () => {
         const title = addCardInput.value.trim();
         if (title) {
-            list.cards.push({
-                id: generateId(),
-                title,
-                description: '',
-                labels: [],
-                dueDate: '',
-                checklist: [],
-                initialEstimate: 0,
-                remainingHoursLog: []
-            });
-            // Sync backlog if needed (omitted for brevity but should be here)
-            if (state.currentProjectId) {
-                const project = state.projects.find(p => p.id === state.currentProjectId);
-                if (project) {
-                    if (!project.backlog) project.backlog = [];
-                    project.backlog.push({ id: generateId(), title, addedAt: new Date().toISOString() });
+            try {
+                const board = getCurrentBoard();
+                await createCard(board.id, list.id, title);
+                // Sync backlog if needed
+                if (state.currentProjectId) {
+                    const project = state.projects.find(p => p.id === state.currentProjectId);
+                    if (project) {
+                        if (!project.backlog) project.backlog = [];
+                        project.backlog.push({ id: generateId(), title, addedAt: new Date().toISOString() });
+                    }
                 }
+                saveState();
+                renderBoard();
+                showToast('Card added!', 'success');
+            } catch (error) {
+                console.error('Error creating card:', error);
+                showToast('Failed to create card', 'error');
             }
-            saveState();
-            renderBoard();
         }
     });
 
@@ -510,14 +568,23 @@ const handleListDragOver = (e) => {
     }
 };
 
-const handleListDrop = (e) => {
+const handleListDrop = async (e) => {
     if (!draggedListEl) return;
     e.preventDefault();
     const board = getCurrentBoard();
     if (!board) return;
     const newOrder = [...boardElement.querySelectorAll('.list')].map(el => el.dataset.listId);
-    board.lists.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
-    saveState();
+    
+    try {
+        await reorderLists(board.id, newOrder);
+        // Update local state to match new order
+        board.lists.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
+    } catch (error) {
+        console.error('Error reordering lists:', error);
+        showToast('Failed to reorder lists', 'error');
+        // Re-render to restore original order
+        renderBoard();
+    }
 };
 
 const handleCardDragStart = (e) => {
@@ -561,7 +628,7 @@ const handleCardDragLeave = (e) => {
     }
 };
 
-const dropCardToContainer = (cardId, container, clientY) => {
+const dropCardToContainer = async (cardId, container, clientY) => {
     const targetListId = container.dataset.listId;
     const board = getCurrentBoard();
     if (!board) return false;
@@ -585,16 +652,26 @@ const dropCardToContainer = (cardId, container, clientY) => {
         const idx = targetList.cards.findIndex(c => c.id === afterId);
         if (idx !== -1) insertIndex = idx;
     }
-    targetList.cards.splice(insertIndex, 0, card);
-    saveState();
-    renderBoard();
-    return true;
+    
+    try {
+        await moveCard(board.id, sourceList.id, targetList.id, cardId, insertIndex);
+        targetList.cards.splice(insertIndex, 0, card);
+        renderBoard();
+        return true;
+    } catch (error) {
+        console.error('Error moving card:', error);
+        showToast('Failed to move card', 'error');
+        // Rollback local state
+        sourceList.cards.push(card);
+        renderBoard();
+        return false;
+    }
 };
 
-const handleCardDrop = (e) => {
+const handleCardDrop = async (e) => {
     e.preventDefault();
     if (!draggedCard) return;
-    dropCardToContainer(draggedCard.dataset.cardId, e.currentTarget, e.clientY);
+    await dropCardToContainer(draggedCard.dataset.cardId, e.currentTarget, e.clientY);
 };
 
 // --- Touch support (long-press to drag) ---

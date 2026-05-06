@@ -1,9 +1,23 @@
 # Story 1.6: Card Checklists
 
 ## Status
-Draft
+✅ **Implemented with Firestore Persistence**
+
+## Implementation Details
+- **Date Completed**: April 23, 2026
+- **Files Updated**: `src/js/app.js`
+- **Firestore Integration**: ✅ Complete
+- **Features Implemented**:
+  - Checklist section in card modal
+  - Add new checklist items with Firestore persistence
+  - Toggle item completion with Firestore persistence
+  - Delete checklist items with Firestore persistence
+  - Real-time progress updates
+  - Strikethrough styling for completed items
+  - Optimistic UI updates with rollback on error
 
 ## Story
+
 **As a** user,  
 **I want** to add checklists to cards,  
 **so that** I can break down work into subtasks.

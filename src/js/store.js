@@ -309,3 +309,397 @@ export const saveUserProfile = async (uid, data) => {
         throw error;
     }
 };
+
+// ================================
+// LIST MANAGEMENT FUNCTIONS
+// ================================
+
+export const createList = async (boardId, title) => {
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) throw new Error('Board not found');
+    
+    const listId = generateId();
+    const newList = {
+        id: listId,
+        title: title.trim(),
+        cards: [],
+        order: board.lists.length
+    };
+    
+    // Add to local state
+    board.lists.push(newList);
+    
+    // Save to Firestore if configured
+    if (isFirebaseConfigured && _currentUser) {
+        try {
+            await db.collection('boards').doc(boardId).collection('lists').doc(listId).set({
+                ...newList,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            
+            // Update board with new list order
+            await db.collection('boards').doc(boardId).update({
+                lists: board.lists.map(l => l.id),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (error) {
+            console.error('Error creating list in Firestore:', error);
+            // Rollback local state
+            board.lists = board.lists.filter(l => l.id !== listId);
+            throw error;
+        }
+    }
+    
+    await saveState();
+    return newList;
+};
+
+export const updateListTitle = async (boardId, listId, newTitle) => {
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) throw new Error('Board not found');
+    
+    const list = board.lists.find(l => l.id === listId);
+    if (!list) throw new Error('List not found');
+    
+    const oldTitle = list.title;
+    list.title = newTitle.trim();
+    
+    // Save to Firestore if configured
+    if (isFirebaseConfigured && _currentUser) {
+        try {
+            await db.collection('boards').doc(boardId).collection('lists').doc(listId).update({
+                title: list.title,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (error) {
+            console.error('Error updating list in Firestore:', error);
+            // Rollback
+            list.title = oldTitle;
+            throw error;
+        }
+    }
+    
+    await saveState();
+};
+
+export const deleteList = async (boardId, listId) => {
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) throw new Error('Board not found');
+    
+    const listIndex = board.lists.findIndex(l => l.id === listId);
+    if (listIndex === -1) throw new Error('List not found');
+    
+    const deletedList = board.lists[listIndex];
+    
+    // Remove from local state
+    board.lists.splice(listIndex, 1);
+    
+    // Update order for remaining lists
+    board.lists.forEach((list, index) => {
+        list.order = index;
+    });
+    
+    // Save to Firestore if configured
+    if (isFirebaseConfigured && _currentUser) {
+        try {
+            // Delete list document
+            await db.collection('boards').doc(boardId).collection('lists').doc(listId).delete();
+            
+            // Update board with new list order
+            await db.collection('boards').doc(boardId).update({
+                lists: board.lists.map(l => l.id),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (error) {
+            console.error('Error deleting list from Firestore:', error);
+            // Rollback local state
+            board.lists.splice(listIndex, 0, deletedList);
+            board.lists.forEach((list, index) => {
+                list.order = index;
+            });
+            throw error;
+        }
+    }
+    
+    await saveState();
+};
+
+export const reorderLists = async (boardId, listOrder) => {
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) throw new Error('Board not found');
+    
+    // Reorder lists locally
+    const newLists = [];
+    listOrder.forEach((listId, index) => {
+        const list = board.lists.find(l => l.id === listId);
+        if (list) {
+            list.order = index;
+            newLists.push(list);
+        }
+    });
+    
+    board.lists = newLists;
+    
+    // Save to Firestore if configured
+    if (isFirebaseConfigured && _currentUser) {
+        try {
+            // Update each list's order
+            const batch = db.batch();
+            board.lists.forEach(list => {
+                const listRef = db.collection('boards').doc(boardId).collection('lists').doc(list.id);
+                batch.update(listRef, {
+                    order: list.order,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            });
+            
+            // Update board with new list order
+            const boardRef = db.collection('boards').doc(boardId);
+            batch.update(boardRef, {
+                lists: board.lists.map(l => l.id),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            
+            await batch.commit();
+        } catch (error) {
+            console.error('Error reordering lists in Firestore:', error);
+            // Note: We can't easily rollback without storing original order
+            throw error;
+        }
+    }
+    
+    await saveState();
+};
+
+// ================================
+// CARD MANAGEMENT FUNCTIONS
+// ================================
+
+export const createCard = async (boardId, listId, title, description = '') => {
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) throw new Error('Board not found');
+    
+    const list = board.lists.find(l => l.id === listId);
+    if (!list) throw new Error('List not found');
+    
+    const cardId = generateId();
+    const newCard = {
+        id: cardId,
+        title: title.trim(),
+        description: description.trim(),
+        labels: [],
+        dueDate: '',
+        checklist: [],
+        initialEstimate: 0,
+        remainingHoursLog: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    };
+    
+    // Add to local state
+    list.cards.push(newCard);
+    
+    // Save to Firestore if configured
+    if (isFirebaseConfigured && _currentUser) {
+        try {
+            await db.collection('boards').doc(boardId).collection('lists').doc(listId).collection('cards').doc(cardId).set({
+                ...newCard,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (error) {
+            console.error('Error creating card in Firestore:', error);
+            // Rollback local state
+            list.cards = list.cards.filter(c => c.id !== cardId);
+            throw error;
+        }
+    }
+    
+    await saveState();
+    return newCard;
+};
+
+export const updateCard = async (boardId, listId, cardId, updates) => {
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) throw new Error('Board not found');
+    
+    const list = board.lists.find(l => l.id === listId);
+    if (!list) throw new Error('List not found');
+    
+    const card = list.cards.find(c => c.id === cardId);
+    if (!card) throw new Error('Card not found');
+    
+    // Update local state
+    Object.assign(card, updates, { updatedAt: new Date().toISOString() });
+    
+    // Save to Firestore if configured
+    if (isFirebaseConfigured && _currentUser) {
+        try {
+            await db.collection('boards').doc(boardId).collection('lists').doc(listId).collection('cards').doc(cardId).update({
+                ...updates,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (error) {
+            console.error('Error updating card in Firestore:', error);
+            // Note: Can't easily rollback without storing original state
+            throw error;
+        }
+    }
+    
+    await saveState();
+};
+
+export const deleteCard = async (boardId, listId, cardId) => {
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) throw new Error('Board not found');
+    
+    const list = board.lists.find(l => l.id === listId);
+    if (!list) throw new Error('List not found');
+    
+    const cardIndex = list.cards.findIndex(c => c.id === cardId);
+    if (cardIndex === -1) throw new Error('Card not found');
+    
+    const deletedCard = list.cards[cardIndex];
+    
+    // Remove from local state
+    list.cards.splice(cardIndex, 1);
+    
+    // Save to Firestore if configured
+    if (isFirebaseConfigured && _currentUser) {
+        try {
+            await db.collection('boards').doc(boardId).collection('lists').doc(listId).collection('cards').doc(cardId).delete();
+        } catch (error) {
+            console.error('Error deleting card from Firestore:', error);
+            // Rollback local state
+            list.cards.splice(cardIndex, 0, deletedCard);
+            throw error;
+        }
+    }
+    
+    await saveState();
+};
+
+export const moveCard = async (boardId, sourceListId, targetListId, cardId, newIndex = 0) => {
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) throw new Error('Board not found');
+    
+    const sourceList = board.lists.find(l => l.id === sourceListId);
+    const targetList = board.lists.find(l => l.id === targetListId);
+    if (!sourceList || !targetList) throw new Error('List not found');
+    
+    const cardIndex = sourceList.cards.findIndex(c => c.id === cardId);
+    if (cardIndex === -1) throw new Error('Card not found');
+    
+    const card = sourceList.cards[cardIndex];
+    
+    // Remove from source list
+    sourceList.cards.splice(cardIndex, 1);
+    
+    // Add to target list at specified position
+    targetList.cards.splice(newIndex, 0, card);
+    
+    // Save to Firestore if configured
+    if (isFirebaseConfigured && _currentUser) {
+        try {
+            // Remove from source list in Firestore
+            await db.collection('boards').doc(boardId).collection('lists').doc(sourceListId).collection('cards').doc(cardId).delete();
+            
+            // Add to target list in Firestore
+            await db.collection('boards').doc(boardId).collection('lists').doc(targetListId).collection('cards').doc(cardId).set({
+                ...card,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (error) {
+            console.error('Error moving card in Firestore:', error);
+            // Rollback local state
+            sourceList.cards.splice(cardIndex, 0, card);
+            targetList.cards.splice(newIndex, 1);
+            throw error;
+        }
+    }
+    
+    await saveState();
+};
+
+export const createBoard = async (boardData) => {
+    const board = {
+        ...boardData,
+        id: generateId(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lists: boardData.lists || [
+            { id: generateId(), title: 'To Do', cards: [] },
+            { id: generateId(), title: 'In Progress', cards: [] },
+            { id: generateId(), title: 'Done', cards: [] },
+        ],
+        history: boardData.history || [],
+        members: boardData.members || []
+    };
+
+    // Update local state
+    state.boards.push(board);
+    state.currentBoardId = board.id;
+
+    // Save to Firestore if configured and user is authenticated
+    if (isFirebaseConfigured && auth.currentUser) {
+        try {
+            await db.collection('boards').doc(board.id).set({
+                ...board,
+                ownerId: auth.currentUser.uid,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            });
+            
+            // Save lists to Firestore
+            for (const list of board.lists) {
+                await db.collection('boards').doc(board.id).collection('lists').doc(list.id).set({
+                    ...list,
+                    boardId: board.id,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                });
+            }
+        } catch (error) {
+            console.error('Error creating board in Firestore:', error);
+            // Rollback local state
+            state.boards = state.boards.filter(b => b.id !== board.id);
+            if (state.currentBoardId === board.id) {
+                state.currentBoardId = state.boards.length > 0 ? state.boards[0].id : null;
+            }
+            throw error;
+        }
+    }
+    
+    await saveState();
+    return board;
+};
+
+export const updateBoard = async (boardId, updates) => {
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) throw new Error('Board not found');
+    
+    const originalBoard = { ...board };
+    
+    // Update local state
+    Object.assign(board, updates);
+    board.updatedAt = new Date().toISOString();
+    
+    // Save to Firestore if configured and user is authenticated
+    if (isFirebaseConfigured && auth.currentUser) {
+        try {
+            await db.collection('boards').doc(boardId).update({
+                ...updates,
+                updatedAt: new Date().toISOString()
+            });
+        } catch (error) {
+            console.error('Error updating board in Firestore:', error);
+            // Rollback local state
+            Object.assign(board, originalBoard);
+            throw error;
+        }
+    }
+    
+    await saveState();
+    return board;
+};

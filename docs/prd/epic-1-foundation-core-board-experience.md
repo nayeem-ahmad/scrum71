@@ -30,24 +30,30 @@
 5. System theme preference is detected on first visit
 6. Empty state displays when no board is selected
 
-## Story 1.3: List Management
+## ✅ Story 1.3: List Management - **COMPLETED**
+**Status**: Implemented with Firestore Persistence (April 23, 2026)  
 **As a** user,  
 **I want** to create, rename, reorder, and delete lists on my board,  
 **so that** I can organize my workflow stages.
 
-**Acceptance Criteria:**
-1. "Add another list" button appears after existing lists
-2. New list form accepts title and creates list on submit
-3. List title is editable inline by clicking
-4. List menu provides Move Left, Move Right, Copy, Clear, Delete actions
-5. Lists can be dragged to reorder
-6. List card count badge updates dynamically
-7. Changes persist to Firestore immediately
+**Implementation Details**:
+- ✅ Firestore persistence with optimistic UI updates
+- ✅ `createList()`, `updateListTitle()`, `deleteList()`, `reorderLists()` functions
+- ✅ Error handling with rollback and toast notifications
+- ✅ Real-time updates and user feedback
 
-## Story 1.4: Card Creation and Basic Editing
+## ✅ Story 1.4: Card Creation and Basic Editing - **COMPLETED**
+**Status**: Implemented with Firestore Persistence (April 23, 2026)  
 **As a** user,  
 **I want** to create cards and edit their basic properties,  
 **so that** I can track individual work items.
+
+**Implementation Details**:
+- ✅ Firestore persistence with optimistic UI updates
+- ✅ `createCard()`, `updateCard()`, `deleteCard()` functions
+- ✅ Card modal with full editing capabilities
+- ✅ Duplicate and delete card functionality
+- ✅ Error handling with rollback and toast notifications
 
 **Acceptance Criteria:**
 1. "Add a card" button appears at bottom of each list
@@ -73,24 +79,32 @@
 6. Overdue dates are highlighted in red
 7. Upcoming dates (within 2 days) show warning color
 
-## Story 1.6: Card Checklists
+## ✅ Story 1.6: Card Checklists - **COMPLETED**
+**Status**: Implemented with Firestore Persistence (April 23, 2026)  
 **As a** user,  
 **I want** to add checklists to cards,  
 **so that** I can break down work into subtasks.
 
-**Acceptance Criteria:**
-1. Card modal shows checklist section
-2. New checklist items can be added via input
-3. Checklist items have checkbox to toggle completion
-4. Completed items show strikethrough styling
-5. Checklist items can be deleted
-6. Card displays checklist progress (e.g., "2/5") when items exist
-7. Progress updates in real-time
+**Implementation Details**:
+- ✅ Firestore persistence with optimistic UI updates
+- ✅ Add, toggle, and delete checklist items
+- ✅ Real-time progress tracking
+- ✅ Strikethrough styling for completed items
+- ✅ Error handling with rollback and toast notifications
 
-## Story 1.7: Drag and Drop Cards
+## ✅ Story 1.7: Drag and Drop Cards - **COMPLETED**
+**Status**: Implemented with Firestore Persistence (April 23, 2026)  
 **As a** user,  
 **I want** to drag cards between lists and reorder within lists,  
 **so that** I can update work status visually.
+
+**Implementation Details**:
+- ✅ Firestore persistence with `moveCard()` function
+- ✅ Drag-and-drop with visual feedback
+- ✅ Drop zone highlighting
+- ✅ Card reordering within and between lists
+- ✅ Real-time persistence to Firestore
+- ✅ Optimistic UI updates with rollback on error
 
 **Acceptance Criteria:**
 1. Cards are draggable with visual feedback (rotation, shadow)
@@ -101,18 +115,18 @@
 6. Animation provides smooth transition feedback
 7. Touch devices support drag gestures
 
-## Story 1.8: Board Creation and Selection
+## ✅ Story 1.8: Board Creation and Selection - **COMPLETED**
+**Status**: Implemented with Firestore Persistence (April 23, 2026)  
 **As a** user,  
 **I want** to create new boards and switch between them,  
 **so that** I can manage multiple projects.
 
-**Acceptance Criteria:**
-1. Board selector dropdown lists all user boards
-2. Clicking board name switches active board
-3. "Create new board" button opens creation modal
-4. Board creation form accepts name and background color
-5. Color picker offers gradient presets
-6. New board appears in selector and becomes active
-7. Board selector shows current board name
+**Implementation Details**:
+- ✅ Firestore persistence with `createBoard()` and `updateBoard()` functions
+- ✅ Board selector dropdown with all user boards
+- ✅ "Create new board" modal with name and background color picker
+- ✅ Gradient preset color options
+- ✅ Sprint properties editing (name, goal, dates)
+- ✅ Optimistic UI updates with rollback on error
 
 ---

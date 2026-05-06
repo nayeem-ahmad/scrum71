@@ -436,24 +436,7 @@ const renderSprints = (project) => {
     });
 };
 
-// Sprint edit save (also handles edits from within PM screen)
-document.getElementById('saveSprintEditBtn')?.addEventListener('click', () => {
-    const modal = document.getElementById('sprintEditModal');
-    const sprintId = modal?.dataset.sprintId || state.currentBoardId;
-    const sprint = state.boards.find(b => b.id === sprintId);
-    if (!sprint) return;
-    sprint.name = document.getElementById('sprintEditName').value.trim() || sprint.name;
-    sprint.goal = document.getElementById('sprintEditGoal').value.trim();
-    sprint.startDate = document.getElementById('sprintEditStart').value;
-    sprint.endDate = document.getElementById('sprintEditEnd').value;
-    saveState();
-    renderBoard();
-    modal?.classList.remove('active');
-    // If inside PM screen, re-render sprints tab
-    const project = state.projects.find(p => p.id === state.currentProjectId);
-    if (project && document.querySelector('.pm-tab[data-tab="sprints"].active')) renderSprints(project);
-    showToast('Sprint updated', 'success');
-});
+// Sprint edit save is handled in app.js (with Firestore persistence)
 
 document.getElementById('cancelSprintEditBtn')?.addEventListener('click', () => {
     document.getElementById('sprintEditModal')?.classList.remove('active');
@@ -490,7 +473,7 @@ const renderBacklog = (project) => {
         <div class="backlog-item ${task.status === 'in-sprint' ? 'in-sprint' : ''}" data-id="${task.id}">
             <div class="backlog-item-body">
                 <div class="backlog-item-title-row">
-                    <span class="backlog-item-title">${esc(task.title)}</span>
+                    <span class="backlog-item-title" title="Click to edit">${esc(task.title)}</span>
                     ${badge}
                 </div>
                 <div class="backlog-item-edit hidden">
@@ -517,13 +500,25 @@ const renderBacklog = (project) => {
         `;
     }).join('');
 
-    // Inline edit
+    // Inline edit via edit button
     listEl.querySelectorAll('.edit-backlog-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const item = btn.closest('.backlog-item');
             item.querySelector('.backlog-item-title-row').classList.add('hidden');
             item.querySelector('.backlog-item-edit').classList.remove('hidden');
             item.querySelector('.backlog-edit-input').focus();
+        });
+    });
+
+    // Click title span to also activate edit
+    listEl.querySelectorAll('.backlog-item-title').forEach(span => {
+        span.addEventListener('click', () => {
+            const item = span.closest('.backlog-item');
+            item.querySelector('.backlog-item-title-row').classList.add('hidden');
+            item.querySelector('.backlog-item-edit').classList.remove('hidden');
+            const input = item.querySelector('.backlog-edit-input');
+            input.focus();
+            input.select();
         });
     });
 
@@ -559,7 +554,6 @@ const renderBacklog = (project) => {
             if (sprints.length === 1) {
                 moveBacklogItemToSprint(project, taskId, sprints[0].id);
             } else {
-                // Show sprint picker modal
                 _pendingBacklogTaskId = taskId;
                 const pickerList = document.getElementById('sprintPickerList');
                 if (pickerList) {

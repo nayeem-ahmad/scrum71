@@ -1,9 +1,25 @@
 # Story 1.8: Board Creation and Selection
 
 ## Status
-Draft
+✅ **Implemented with Firestore Persistence**
+
+## Implementation Details
+- **Date Completed**: April 23, 2026
+- **Files Updated**: `src/js/store.js`, `src/js/app.js`
+- **Firestore Integration**: ✅ Complete
+- **Features Implemented**:
+  - `createBoard()`: Creates new boards with Firestore persistence
+  - `updateBoard()`: Updates board properties with Firestore persistence
+  - Board selector dropdown with all user boards
+  - "Create new board" modal with name and background color picker
+  - Gradient preset color options
+  - New boards appear in selector and become active
+  - Current board name displayed in header
+  - Sprint properties editing (name, goal, dates)
+  - Optimistic UI updates with rollback on error
 
 ## Story
+
 **As a** user,  
 **I want** to create new boards and switch between them,  
 **so that** I can manage multiple projects.

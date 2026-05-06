@@ -1,8 +1,8 @@
 import { initAuth } from './auth.js';
 import { renderBoard } from './board.js';
-import { state, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentBoard } from './store.js';
+import { state, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentBoard, deleteCard as deleteCardFromStore, createCard, updateCard, createBoard, updateBoard } from './store.js';
 import { showToast, generateUniqueProjectName, generateId, getEffectiveRemainingHours } from './utils.js';
-import './project.js'; // Import project logic/listeners
+import { renderProjectManagement } from './project.js'; // Import project logic/listeners
 
 console.log('App initialization...');
 
@@ -141,13 +141,46 @@ const renderChecklist = (card) => {
         const item = card.checklist.find(i => i.id === id);
         if (!item) return;
         el.querySelector('.checklist-text').textContent = item.text;
-        el.querySelector('.checklist-checkbox').addEventListener('change', (e) => {
+        el.querySelector('.checklist-checkbox').addEventListener('change', async (e) => {
             item.completed = e.target.checked;
             el.classList.toggle('completed', e.target.checked);
+            
+            // Save checklist update
+            if (editingCardContext) {
+                try {
+                    const board = getCurrentBoard();
+                    await updateCard(board.id, editingCardContext.listId, card.id, {
+                        checklist: card.checklist
+                    });
+                } catch (error) {
+                    console.error('Error updating checklist:', error);
+                    // Rollback UI
+                    item.completed = !e.target.checked;
+                    el.classList.toggle('completed', !e.target.checked);
+                    e.target.checked = !e.target.checked;
+                    showToast('Failed to update checklist', 'error');
+                }
+            }
         });
-        el.querySelector('.checklist-delete').addEventListener('click', () => {
-            card.checklist = card.checklist.filter(i => i.id !== id);
-            renderChecklist(card);
+        el.querySelector('.checklist-delete').addEventListener('click', async () => {
+            const updatedChecklist = card.checklist.filter(i => i.id !== id);
+            
+            if (editingCardContext) {
+                try {
+                    const board = getCurrentBoard();
+                    await updateCard(board.id, editingCardContext.listId, card.id, {
+                        checklist: updatedChecklist
+                    });
+                    card.checklist = updatedChecklist;
+                    renderChecklist(card);
+                } catch (error) {
+                    console.error('Error deleting checklist item:', error);
+                    showToast('Failed to delete checklist item', 'error');
+                }
+            } else {
+                card.checklist = updatedChecklist;
+                renderChecklist(card);
+            }
         });
     });
 };
@@ -198,9 +231,9 @@ const closeCardModal = () => {
     document.getElementById('cardModal').classList.remove('active');
 };
 
-const saveCardChanges = () => {
+const saveCardChanges = async () => {
     const card = getEditingCard();
-    if (!card) return;
+    if (!card || !editingCardContext) return;
 
     const title = document.getElementById('cardTitle').value.trim();
     if (!title) {
@@ -209,66 +242,94 @@ const saveCardChanges = () => {
         return;
     }
 
-    card.title = title;
-    card.description = document.getElementById('cardDescription').value;
-    card.dueDate = document.getElementById('cardDueDate').value || '';
+    const updates = {
+        title: title,
+        description: document.getElementById('cardDescription').value,
+        dueDate: document.getElementById('cardDueDate').value || '',
+        labels: [...document.querySelectorAll('#labelPicker .label-option.selected')]
+            .map(btn => btn.dataset.label),
+        assigneeId: document.getElementById('cardAssignee').value || null
+    };
 
     const estVal = document.getElementById('cardInitialEstimate').value;
-    card.initialEstimate = estVal === '' ? 0 : Number(estVal) || 0;
+    updates.initialEstimate = estVal === '' ? 0 : Number(estVal) || 0;
 
-    card.labels = [...document.querySelectorAll('#labelPicker .label-option.selected')]
-        .map(btn => btn.dataset.label);
-
-    const assigneeId = document.getElementById('cardAssignee').value;
-    card.assigneeId = assigneeId || null;
-
-    card.updatedAt = new Date().toISOString();
-
-    saveState();
-    renderBoard();
-    closeCardModal();
-    showToast('Card saved', 'success');
+    try {
+        const board = getCurrentBoard();
+        await updateCard(board.id, editingCardContext.listId, card.id, updates);
+        
+        // Update local state
+        Object.assign(card, updates, { updatedAt: new Date().toISOString() });
+        
+        renderBoard();
+        closeCardModal();
+        showToast('Card saved', 'success');
+    } catch (error) {
+        console.error('Error saving card:', error);
+        showToast('Failed to save card', 'error');
+    }
 };
 
-const duplicateCard = () => {
+const duplicateCard = async () => {
     const card = getEditingCard();
     if (!card || !editingCardContext) return;
     const board = getCurrentBoard();
     const list = board?.lists.find(l => l.id === editingCardContext.listId);
     if (!list) return;
 
-    const clone = JSON.parse(JSON.stringify(card));
-    clone.id = generateId();
-    clone.title = `${card.title} (copy)`;
-    if (Array.isArray(clone.checklist)) {
-        clone.checklist.forEach(item => { item.id = generateId(); });
+    try {
+        // Create the duplicate card
+        const newCard = await createCard(board.id, list.id, `${card.title} (copy)`, card.description);
+        
+        // Copy other properties
+        const updates = {
+            dueDate: card.dueDate,
+            labels: [...card.labels],
+            initialEstimate: card.initialEstimate,
+            checklist: card.checklist ? card.checklist.map(item => ({
+                ...item,
+                id: generateId()
+            })) : []
+        };
+        
+        await updateCard(board.id, list.id, newCard.id, updates);
+        
+        // Find the index of the original card and insert after it
+        const idx = list.cards.findIndex(c => c.id === card.id);
+        if (idx !== -1) {
+            const clonedCard = { ...newCard, ...updates };
+            list.cards.splice(idx + 1, 0, clonedCard);
+        }
+        
+        renderBoard();
+        closeCardModal();
+        showToast('Card duplicated!', 'success');
+    } catch (error) {
+        console.error('Error duplicating card:', error);
+        showToast('Failed to duplicate card', 'error');
     }
-    clone.createdAt = new Date().toISOString();
-    clone.updatedAt = clone.createdAt;
-
-    const idx = list.cards.findIndex(c => c.id === card.id);
-    list.cards.splice(idx + 1, 0, clone);
-
-    saveState();
-    renderBoard();
-    closeCardModal();
-    showToast('Card duplicated', 'success');
 };
 
-const deleteCard = () => {
+const deleteCard = async () => {
     if (!editingCardContext) return;
     if (!confirm('Delete this card? This cannot be undone.')) return;
 
-    const board = getCurrentBoard();
-    const list = board?.lists.find(l => l.id === editingCardContext.listId);
-    if (!list) return;
-
-    list.cards = list.cards.filter(c => c.id !== editingCardContext.cardId);
-
-    saveState();
-    renderBoard();
-    closeCardModal();
-    showToast('Card deleted', 'success');
+    try {
+        const board = getCurrentBoard();
+        await deleteCardFromStore(board.id, editingCardContext.listId, editingCardContext.cardId);
+        
+        const list = board?.lists.find(l => l.id === editingCardContext.listId);
+        if (list) {
+            list.cards = list.cards.filter(c => c.id !== editingCardContext.cardId);
+        }
+        
+        renderBoard();
+        closeCardModal();
+        showToast('Card deleted', 'success');
+    } catch (error) {
+        console.error('Error deleting card:', error);
+        showToast('Failed to delete card', 'error');
+    }
 };
 
 window.addEventListener('openCardModal', (e) => openCardModal(e.detail));
@@ -378,12 +439,21 @@ const renderRhLogList = (card) => {
     container.querySelectorAll('.rh-entry').forEach(el => {
         const entryId = el.dataset.entryId;
 
-        el.querySelector('.rh-delete-btn').addEventListener('click', () => {
-            card.remainingHoursLog = card.remainingHoursLog.filter(e => e.id !== entryId);
-            saveState();
-            renderBoard();
-            renderRhLogList(card);
-            renderCardRemainingChart(card);
+        el.querySelector('.rh-delete-btn').addEventListener('click', async () => {
+            try {
+                const board = getCurrentBoard();
+                const updatedLog = card.remainingHoursLog.filter(e => e.id !== entryId);
+                await updateCard(board.id, editingCardContext.listId, card.id, {
+                    remainingHoursLog: updatedLog
+                });
+                card.remainingHoursLog = updatedLog;
+                renderBoard();
+                renderRhLogList(card);
+                renderCardRemainingChart(card);
+            } catch (error) {
+                console.error('Error deleting remaining hours entry:', error);
+                showToast('Failed to delete entry', 'error');
+            }
         });
 
         el.querySelector('.rh-edit-btn').addEventListener('click', () => {
@@ -396,22 +466,31 @@ const renderRhLogList = (card) => {
             el.querySelector('.rh-entry-edit').classList.add('hidden');
         });
 
-        el.querySelector('.rh-save-edit-btn').addEventListener('click', () => {
+        el.querySelector('.rh-save-edit-btn').addEventListener('click', async () => {
             const newHours = parseFloat(el.querySelector('.rh-edit-hours').value);
             const newTs = el.querySelector('.rh-edit-timestamp').value;
             if (isNaN(newHours) || newHours < 0 || !newTs) {
                 showToast('Enter valid hours and timestamp', 'error');
                 return;
             }
-            const entry = card.remainingHoursLog.find(e => e.id === entryId);
-            if (entry) {
-                entry.remainingHours = newHours;
-                entry.timestamp = new Date(newTs).toISOString();
+            try {
+                const board = getCurrentBoard();
+                const updatedLog = card.remainingHoursLog.map(e => 
+                    e.id === entryId 
+                        ? { ...e, remainingHours: newHours, timestamp: new Date(newTs).toISOString() }
+                        : e
+                );
+                await updateCard(board.id, editingCardContext.listId, card.id, {
+                    remainingHoursLog: updatedLog
+                });
+                card.remainingHoursLog = updatedLog;
+                renderBoard();
+                renderRhLogList(card);
+                renderCardRemainingChart(card);
+            } catch (error) {
+                console.error('Error updating remaining hours entry:', error);
+                showToast('Failed to update entry', 'error');
             }
-            saveState();
-            renderBoard();
-            renderRhLogList(card);
-            renderCardRemainingChart(card);
         });
     });
 };
@@ -463,9 +542,9 @@ const renderCardRemainingChart = (card) => {
     });
 };
 
-document.getElementById('rhAddEntryBtn')?.addEventListener('click', () => {
+document.getElementById('rhAddEntryBtn')?.addEventListener('click', async () => {
     const card = getEditingCard();
-    if (!card) return;
+    if (!card || !editingCardContext) return;
     const hoursVal = document.getElementById('rhNewHours').value;
     const tsVal = document.getElementById('rhNewTimestamp').value;
     if (hoursVal === '' || !tsVal) {
@@ -477,20 +556,29 @@ document.getElementById('rhAddEntryBtn')?.addEventListener('click', () => {
         showToast('Enter a valid hours value', 'error');
         return;
     }
-    if (!card.remainingHoursLog) card.remainingHoursLog = [];
-    card.remainingHoursLog.push({
-        id: generateId(),
-        remainingHours: hours,
-        timestamp: new Date(tsVal).toISOString()
-    });
-    document.getElementById('rhNewHours').value = '';
-    document.getElementById('rhNewTimestamp').value = new Date().toISOString().slice(0, 16);
-    saveState();
-    renderBoard();
-    renderRhLogList(card);
-    renderCardRemainingChart(card);
-    renderTimeSummaryBar(card);
-    showToast('Entry added', 'success');
+    try {
+        const board = getCurrentBoard();
+        const newEntry = {
+            id: generateId(),
+            remainingHours: hours,
+            timestamp: new Date(tsVal).toISOString()
+        };
+        const updatedLog = [...(card.remainingHoursLog || []), newEntry];
+        await updateCard(board.id, editingCardContext.listId, card.id, {
+            remainingHoursLog: updatedLog
+        });
+        card.remainingHoursLog = updatedLog;
+        document.getElementById('rhNewHours').value = '';
+        document.getElementById('rhNewTimestamp').value = new Date().toISOString().slice(0, 16);
+        renderBoard();
+        renderRhLogList(card);
+        renderCardRemainingChart(card);
+        renderTimeSummaryBar(card);
+        showToast('Entry added', 'success');
+    } catch (error) {
+        console.error('Error adding remaining hours entry:', error);
+        showToast('Failed to add entry', 'error');
+    }
 });
 
 // ================================
@@ -533,19 +621,28 @@ const renderShLogList = (card) => {
 
     container.querySelectorAll('.sh-delete-btn').forEach(btn => {
         const entryId = btn.closest('.sh-entry')?.dataset.entryId;
-        btn.addEventListener('click', () => {
-            card.spentHoursLog = (card.spentHoursLog || []).filter(e => e.id !== entryId);
-            saveState();
-            renderBoard();
-            renderShLogList(card);
-            renderTimeSummaryBar(card);
+        btn.addEventListener('click', async () => {
+            try {
+                const board = getCurrentBoard();
+                const updatedLog = (card.spentHoursLog || []).filter(e => e.id !== entryId);
+                await updateCard(board.id, editingCardContext.listId, card.id, {
+                    spentHoursLog: updatedLog
+                });
+                card.spentHoursLog = updatedLog;
+                renderBoard();
+                renderShLogList(card);
+                renderTimeSummaryBar(card);
+            } catch (error) {
+                console.error('Error deleting spent hours entry:', error);
+                showToast('Failed to delete entry', 'error');
+            }
         });
     });
 };
 
-document.getElementById('shAddEntryBtn')?.addEventListener('click', () => {
+document.getElementById('shAddEntryBtn')?.addEventListener('click', async () => {
     const card = getEditingCard();
-    if (!card) return;
+    if (!card || !editingCardContext) return;
     const hoursVal = document.getElementById('shNewHours').value;
     const tsVal = document.getElementById('shNewTimestamp').value;
     const note = document.getElementById('shNewNote').value.trim();
@@ -558,24 +655,33 @@ document.getElementById('shAddEntryBtn')?.addEventListener('click', () => {
         showToast('Enter a valid hours value (> 0)', 'error');
         return;
     }
-    if (!card.spentHoursLog) card.spentHoursLog = [];
-    card.spentHoursLog.push({
-        id: generateId(),
-        spentHours: hours,
-        timestamp: new Date(tsVal).toISOString(),
-        note: note || null
-    });
-    document.getElementById('shNewHours').value = '';
-    document.getElementById('shNewNote').value = '';
-    document.getElementById('shNewTimestamp').value = new Date().toISOString().slice(0, 16);
-    saveState();
-    renderBoard();
-    renderTimeSummaryBar(card);
-    // If history panel open, refresh it
-    if (!document.getElementById('rhHistoryPanel')?.classList.contains('hidden')) {
-        renderShLogList(card);
+    try {
+        const board = getCurrentBoard();
+        const newEntry = {
+            id: generateId(),
+            spentHours: hours,
+            timestamp: new Date(tsVal).toISOString(),
+            note: note || null
+        };
+        const updatedLog = [...(card.spentHoursLog || []), newEntry];
+        await updateCard(board.id, editingCardContext.listId, card.id, {
+            spentHoursLog: updatedLog
+        });
+        card.spentHoursLog = updatedLog;
+        document.getElementById('shNewHours').value = '';
+        document.getElementById('shNewNote').value = '';
+        document.getElementById('shNewTimestamp').value = new Date().toISOString().slice(0, 16);
+        renderBoard();
+        renderTimeSummaryBar(card);
+        // If history panel open, refresh it
+        if (!document.getElementById('rhHistoryPanel')?.classList.contains('hidden')) {
+            renderShLogList(card);
+        }
+        showToast('Time logged!', 'success');
+    } catch (error) {
+        console.error('Error adding spent hours entry:', error);
+        showToast('Failed to log time', 'error');
     }
-    showToast('Time logged!', 'success');
 });
 
 document.getElementById('closeCardModal')?.addEventListener('click', closeCardModal);
@@ -588,16 +694,29 @@ document.querySelectorAll('#labelPicker .label-option').forEach(btn => {
     btn.addEventListener('click', () => btn.classList.toggle('selected'));
 });
 
-document.getElementById('addChecklistItemBtn')?.addEventListener('click', () => {
+document.getElementById('addChecklistItemBtn')?.addEventListener('click', async () => {
     const input = document.getElementById('newChecklistItem');
     const text = input.value.trim();
     if (!text) return;
     const card = getEditingCard();
-    if (!card) return;
+    if (!card || !editingCardContext) return;
     if (!card.checklist) card.checklist = [];
-    card.checklist.push({ id: generateId(), text, completed: false });
-    input.value = '';
-    renderChecklist(card);
+    
+    const newChecklistItem = { id: generateId(), text, completed: false };
+    const updatedChecklist = [...card.checklist, newChecklistItem];
+    
+    try {
+        const board = getCurrentBoard();
+        await updateCard(board.id, editingCardContext.listId, card.id, {
+            checklist: updatedChecklist
+        });
+        card.checklist = updatedChecklist;
+        input.value = '';
+        renderChecklist(card);
+    } catch (error) {
+        console.error('Error adding checklist item:', error);
+        showToast('Failed to add checklist item', 'error');
+    }
 });
 
 document.getElementById('newChecklistItem')?.addEventListener('keydown', (e) => {
@@ -732,7 +851,7 @@ document.getElementById('createBoardBtn')?.addEventListener('click', () => {
 
 window.addEventListener('openBoardModal', (e) => openBoardModal(e.detail?.projectId));
 
-document.getElementById('saveBoardBtn')?.addEventListener('click', () => {
+document.getElementById('saveBoardBtn')?.addEventListener('click', async () => {
     const name = document.getElementById('boardName')?.value.trim();
     if (!name) { showToast('Enter a board name', 'error'); return; }
 
@@ -747,48 +866,44 @@ document.getElementById('saveBoardBtn')?.addEventListener('click', () => {
     const user = state.projects.find(p => p.id === projectId)?.owner
         || { id: generateId(), name: 'You', email: 'you@example.com', photoURL: null };
 
-    const board = {
-        id: generateId(),
-        name,
-        background,
-        goal,
-        startDate,
-        endDate,
-        projectId,
-        owner: user,
-        members: [],
-        lists: [
-            { id: generateId(), title: 'To Do', cards: [] },
-            { id: generateId(), title: 'In Progress', cards: [] },
-            { id: generateId(), title: 'Done', cards: [] },
-        ],
-        history: [],
-        createdAt: new Date().toISOString(),
-    };
+    try {
+        const boardData = {
+            name,
+            background,
+            goal,
+            startDate,
+            endDate,
+            projectId,
+            owner: user,
+            members: [],
+            history: []
+        };
 
-    state.boards.push(board);
-    state.currentBoardId = board.id;
+        const board = await createBoard(boardData);
 
-    // Associate board with project
-    if (projectId) {
-        const project = state.projects.find(p => p.id === projectId);
-        if (project) {
-            if (!project.sprintIds) project.sprintIds = [];
-            project.sprintIds.push(board.id);
-            if (!project.owner) project.owner = user;
-            // Ensure board owner is in project members
-            const emails = [project.owner?.email, ...(project.members || []).map(m => m.email)].filter(Boolean);
-            if (!emails.includes(user.email)) {
-                project.members = project.members || [];
-                project.members.push({ ...user, role: 'member', addedAt: new Date().toISOString() });
+        // Associate board with project
+        if (projectId) {
+            const project = state.projects.find(p => p.id === projectId);
+            if (project) {
+                if (!project.sprintIds) project.sprintIds = [];
+                project.sprintIds.push(board.id);
+                if (!project.owner) project.owner = user;
+                // Ensure board owner is in project members
+                const emails = [project.owner?.email, ...(project.members || []).map(m => m.email)].filter(Boolean);
+                if (!emails.includes(user.email)) {
+                    project.members = project.members || [];
+                    project.members.push({ ...user, role: 'member', addedAt: new Date().toISOString() });
+                }
             }
         }
-    }
 
-    saveState();
-    renderBoard();
-    document.getElementById('boardModal').classList.remove('active');
-    showToast(`Sprint "${name}" created`, 'success');
+        renderBoard();
+        document.getElementById('boardModal').classList.remove('active');
+        showToast(`Sprint "${name}" created`, 'success');
+    } catch (error) {
+        console.error('Error creating board:', error);
+        showToast('Failed to create board', 'error');
+    }
 });
 
 document.getElementById('cancelBoardBtn')?.addEventListener('click', () => {
@@ -815,21 +930,32 @@ document.getElementById('editSprintPropsBtn')?.addEventListener('click', () => {
     if (modal) { modal.dataset.sprintId = board.id; modal.classList.add('active'); }
 });
 
-document.getElementById('saveSprintEditBtn')?.addEventListener('click', () => {
+document.getElementById('saveSprintEditBtn')?.addEventListener('click', async () => {
     const modal = document.getElementById('sprintEditModal');
     const sprintId = modal?.dataset.sprintId;
     const board = sprintId
         ? state.boards.find(b => b.id === sprintId)
         : getCurrentBoard();
     if (!board) return;
-    board.name = document.getElementById('sprintEditName').value.trim() || board.name;
-    board.goal = document.getElementById('sprintEditGoal').value.trim();
-    board.startDate = document.getElementById('sprintEditStart').value;
-    board.endDate = document.getElementById('sprintEditEnd').value;
-    saveState();
-    renderBoard();
-    modal.classList.remove('active');
-    showToast('Sprint updated', 'success');
+    try {
+        const updates = {
+            name: document.getElementById('sprintEditName').value.trim() || board.name,
+            goal: document.getElementById('sprintEditGoal').value.trim(),
+            startDate: document.getElementById('sprintEditStart').value,
+            endDate: document.getElementById('sprintEditEnd').value
+        };
+        await updateBoard(board.id, updates);
+        renderBoard();
+        modal?.classList.remove('active');
+        // If inside PM screen, re-render sprints tab
+        if (document.querySelector('.pm-tab[data-tab="sprints"].active')) {
+            renderProjectManagement();
+        }
+        showToast('Sprint updated', 'success');
+    } catch (error) {
+        console.error('Error updating board:', error);
+        showToast('Failed to update sprint', 'error');
+    }
 });
 
 document.getElementById('cancelSprintEditBtn')?.addEventListener('click', () => {

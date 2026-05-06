@@ -1,10 +1,24 @@
 # Story 1.4: Card Creation and Basic Editing
 
 ## Status
+✅ **Implemented with Firestore Persistence**
 
-Draft
+## Implementation Details
+- **Date Completed**: April 23, 2026
+- **Files Updated**: `src/js/store.js`, `src/js/app.js`, `src/js/board.js`
+- **Firestore Integration**: ✅ Complete
+- **Features Implemented**:
+  - `createCard()`: Creates new cards with Firestore persistence
+  - `updateCard()`: Updates card properties with Firestore persistence
+  - `deleteCard()`: Deletes cards with Firestore persistence
+  - Card modal with full editing capabilities
+  - Duplicate card functionality
+  - Delete card functionality with confirmation
+  - Optimistic UI updates with rollback on error
+  - Toast notifications for user feedback
 
 ## Story
+
 
 **As a** user,  
 **I want** to create cards and edit their basic properties,  

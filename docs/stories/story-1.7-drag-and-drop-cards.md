@@ -1,9 +1,23 @@
 # Story 1.7: Drag and Drop Cards
 
 ## Status
-Draft
+✅ **Implemented with Firestore Persistence**
+
+## Implementation Details
+- **Date Completed**: April 23, 2026
+- **Files Updated**: `src/js/store.js`, `src/js/board.js`
+- **Firestore Integration**: ✅ Complete
+- **Features Implemented**:
+  - `moveCard()`: Moves cards between lists with Firestore persistence
+  - Drag-and-drop with visual feedback
+  - Drop zone highlighting
+  - Card reordering within and between lists
+  - Real-time persistence to Firestore
+  - Optimistic UI updates with rollback on error
+  - Smooth transition animations
 
 ## Story
+
 **As a** user,  
 **I want** to drag cards between lists and reorder within lists,  
 **so that** I can update work status visually.

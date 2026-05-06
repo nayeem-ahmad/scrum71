@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Flowboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <h1>Flowboard Test</h1>
+        <button id="testButton">Test Board Creation</button>
+        <div id="output"></div>
+    </div>
+    
+    <script type="module">
+        import { state, createBoard } from './src/js/store.js';
+        import { showToast } from './src/js/utils.js';
+        
+        document.getElementById('testButton').addEventListener('click', async () => {
+            const output = document.getElementById('output');
+            output.innerHTML = 'Testing board creation...';
+            
+            try {
+                const boardData = {
+                    name: 'Test Board',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    goal: 'Test goal',
+                    startDate: '2024-01-01',
+                    endDate: '2024-01-15',
+                    projectId: null,
+                    owner: { id: 'test-1', name: 'Test User', email: 'test@example.com', photoURL: null },
+                    members: [],
+                    history: []
+                };
+                
+                const board = await createBoard(boardData);
+                output.innerHTML = `Board created: ${board.name} (ID: ${board.id})<br>`;
+                output.innerHTML += `Current board ID: ${state.currentBoardId}<br>`;
+                output.innerHTML += `Number of boards: ${state.boards.length}`;
+                
+                showToast('Test successful!', 'success');
+            } catch (error) {
+                output.innerHTML = `Error: ${error.message}`;
+                console.error(error);
+                showToast('Test failed', 'error');
+            }
+        });
+    </script>
+</body>
+</html>
