@@ -342,15 +342,6 @@ export const createListElement = (list) => {
             try {
                 const board = getCurrentBoard();
                 await createCard(board.id, list.id, title);
-                // Sync backlog if needed
-                if (state.currentProjectId) {
-                    const project = state.projects.find(p => p.id === state.currentProjectId);
-                    if (project) {
-                        if (!project.backlog) project.backlog = [];
-                        project.backlog.push({ id: generateId(), title, addedAt: new Date().toISOString() });
-                    }
-                }
-                saveState();
                 renderBoard();
                 showToast('Card added!', 'success');
             } catch (error) {
@@ -487,7 +478,21 @@ export const createCardElement = (card, listId) => {
         </div>
     ` : '';
 
+    // Story badge
+    let storyBadgeHtml = '';
+    if (card.linkedStoryId) {
+        const project = state.projects.find(p => p.id === state.currentProjectId);
+        const story = project ? (project.backlog || []).find(s => s.id === card.linkedStoryId) : null;
+        if (story) {
+            storyBadgeHtml = `<div class="card-story-badge">
+                <svg viewBox="0 0 24 24" fill="none" width="10" height="10"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="14 2 14 8 20 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                ${escapeHtml(story.title)}
+            </div>`;
+        }
+    }
+
     cardEl.innerHTML = `
+        ${storyBadgeHtml}
         ${labelsHtml}
         <div class="card-content">
             <div class="card-title-text">${escapeHtml(card.title || '')}</div>

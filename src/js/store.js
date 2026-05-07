@@ -93,6 +93,9 @@ export const initializeSampleData = () => {
         ]
     };
 
+    const storyAuthId = generateId();
+    const storyDashId = generateId();
+
     const sampleProject = {
         id: generateId(),
         name: 'Main Project',
@@ -100,7 +103,11 @@ export const initializeSampleData = () => {
         owner: sampleBoard.owner,
         members: [...sampleBoard.members],
         backlog: [
-            { id: generateId(), title: 'Explore microservices architecture', addedAt: new Date().toISOString() }
+            { id: storyAuthId, type: 'story', title: 'User Authentication', status: 'open', addedAt: new Date().toISOString() },
+            { id: generateId(), type: 'task', title: 'Build login & registration forms', linkedStoryId: storyAuthId, status: 'open', addedAt: new Date().toISOString() },
+            { id: generateId(), type: 'task', title: 'Integrate OAuth (Google & GitHub)', linkedStoryId: storyAuthId, status: 'open', addedAt: new Date().toISOString() },
+            { id: storyDashId, type: 'story', title: 'Analytics Dashboard', status: 'open', addedAt: new Date().toISOString() },
+            { id: generateId(), type: 'task', title: 'Add burndown chart to dashboard', linkedStoryId: storyDashId, status: 'open', addedAt: new Date().toISOString() },
         ],
         sprintIds: [sampleBoard.id]
     };

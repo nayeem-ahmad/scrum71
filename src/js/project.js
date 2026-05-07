@@ -254,10 +254,11 @@ const moveBacklogItemToSprint = (project, taskId, targetSprintId) => {
         remainingHoursLog: [],
         initialEstimate: 0,
         assigneeId: null,
+        linkedStoryId: (task.type === 'task' && task.linkedStoryId) ? task.linkedStoryId : null,
+        linkedTaskId: taskId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
     });
-    // Mark backlog item as in-sprint (don't remove, just update status)
     task.status = 'in-sprint';
     task.sprintId = sprint.id;
     task.cardId = cardId;
@@ -452,151 +453,284 @@ document.getElementById('pmCreateSprintBtn')?.addEventListener('click', () => {
 });
 
 // --------------------------------
-// Backlog tab
+// Backlog tab — story/task hierarchy
 // --------------------------------
+
+const addTaskToStory = (project, storyId, input) => {
+    const val = input.value.trim();
+    if (!val) return;
+    if (!project.backlog) project.backlog = [];
+    project.backlog.push({
+        id: generateId(),
+        type: 'task',
+        title: val,
+        linkedStoryId: storyId,
+        status: 'open',
+        addedAt: new Date().toISOString()
+    });
+    saveState();
+    renderBacklog(project);
+};
+
+const openSprintPickerFor = (project, taskId) => {
+    const sprints = state.boards.filter(b => b.projectId === project.id);
+    if (!sprints.length) { showToast('No sprints. Create a sprint first.', 'warning'); return; }
+    if (sprints.length === 1) {
+        moveBacklogItemToSprint(project, taskId, sprints[0].id);
+        return;
+    }
+    _pendingBacklogTaskId = taskId;
+    const pickerList = document.getElementById('sprintPickerList');
+    if (pickerList) {
+        pickerList.innerHTML = sprints.map(s => `
+            <button class="sprint-picker-item" data-sprint-id="${s.id}">
+                <div class="sprint-picker-color" style="background:${s.background || 'var(--accent-primary)'}"></div>
+                <span>${esc(s.name)}</span>
+            </button>
+        `).join('');
+        pickerList.querySelectorAll('.sprint-picker-item').forEach(item => {
+            item.addEventListener('click', () => {
+                moveBacklogItemToSprint(project, _pendingBacklogTaskId, item.dataset.sprintId);
+                document.getElementById('sprintPickerModal').classList.remove('active');
+                _pendingBacklogTaskId = null;
+            });
+        });
+    }
+    document.getElementById('sprintPickerModal').classList.add('active');
+};
+
 const renderBacklog = (project) => {
     const listEl = document.getElementById('backlogList');
     if (!listEl) return;
     const items = project.backlog || [];
 
-    if (!items.length) {
-        listEl.innerHTML = '<div class="pm-empty-hint">No backlog items. Add one above.</div>';
+    const stories = items.filter(i => i.type === 'story');
+    const tasks = items.filter(i => i.type === 'task');
+    const legacyItems = items.filter(i => !i.type);
+
+    const tasksByStory = {};
+    const orphanTasks = [...legacyItems];
+    tasks.forEach(task => {
+        if (task.linkedStoryId) {
+            if (!tasksByStory[task.linkedStoryId]) tasksByStory[task.linkedStoryId] = [];
+            tasksByStory[task.linkedStoryId].push(task);
+        } else {
+            orphanTasks.push(task);
+        }
+    });
+
+    if (!stories.length && !orphanTasks.length) {
+        listEl.innerHTML = '<div class="pm-empty-hint">No backlog items. Add a story above.</div>';
         return;
     }
 
-    const fmt = (iso) => iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
-
-    listEl.innerHTML = items.map(task => {
+    const renderTaskHtml = (task) => {
         const sprint = task.sprintId ? state.boards.find(b => b.id === task.sprintId) : null;
-        const badge = sprint ? `<span class="backlog-sprint-badge" title="In sprint">${esc(sprint.name)}</span>` : '';
+        const badge = sprint ? `<span class="backlog-sprint-badge" title="In sprint: ${esc(sprint.name)}">${esc(sprint.name)}</span>` : '';
         return `
-        <div class="backlog-item ${task.status === 'in-sprint' ? 'in-sprint' : ''}" data-id="${task.id}">
-            <div class="backlog-item-body">
-                <div class="backlog-item-title-row">
-                    <span class="backlog-item-title" title="Click to edit">${esc(task.title)}</span>
-                    ${badge}
-                </div>
-                <div class="backlog-item-edit hidden">
-                    <input type="text" class="form-input backlog-edit-input" value="${esc(task.title)}" style="margin-bottom:0.25rem">
-                    <div style="display:flex;gap:0.4rem">
-                        <button class="btn btn-sm btn-primary backlog-save-edit-btn">Save</button>
-                        <button class="btn btn-sm btn-secondary backlog-cancel-edit-btn">Cancel</button>
-                    </div>
-                </div>
-                <div class="backlog-item-date">${fmt(task.addedAt)}</div>
+        <div class="backlog-task ${task.status === 'in-sprint' ? 'in-sprint' : ''}" data-id="${esc(task.id)}">
+            <span class="task-icon">
+                <svg viewBox="0 0 24 24" fill="none" width="12" height="12"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <div class="task-title-wrap">
+                <span class="task-title">${esc(task.title)}</span>
+                <input type="text" class="form-input task-title-edit-input hidden" value="${esc(task.title)}">
+                ${badge}
             </div>
-            <div class="backlog-item-actions">
-                <button class="btn-icon edit-backlog-btn" data-id="${task.id}" title="Edit">
-                    <svg viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            <div class="task-actions">
+                <button class="btn-icon move-sprint-btn" data-id="${esc(task.id)}" title="Move to Sprint">
+                    <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
-                <button class="btn-icon move-sprint-btn" data-id="${task.id}" title="Move to Sprint">
-                    <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <button class="btn-icon danger delete-backlog-btn" data-id="${task.id}" title="Delete">
-                    <svg viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <button class="btn-icon danger delete-task-btn" data-id="${esc(task.id)}" title="Delete Task">
+                    <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
             </div>
-        </div>
-        `;
-    }).join('');
+        </div>`;
+    };
 
-    // Inline edit via edit button
-    listEl.querySelectorAll('.edit-backlog-btn').forEach(btn => {
+    const renderStoryHtml = (story, storyTasks) => {
+        const total = storyTasks.length;
+        const done = storyTasks.filter(t => t.status === 'in-sprint').length;
+        const allDone = total > 0 && done === total;
+        const isCollapsed = !!story.collapsed;
+        const progressText = total > 0
+            ? `${done}/${total} in sprint`
+            : 'No tasks yet';
+        return `
+        <div class="story-group" data-id="${esc(story.id)}">
+            <div class="story-header">
+                <button class="story-collapse-btn ${isCollapsed ? 'collapsed' : ''}" data-id="${esc(story.id)}" title="${isCollapsed ? 'Expand' : 'Collapse'}">
+                    <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <span class="story-type-icon">
+                    <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="14 2 14 8 20 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="10 9 9 9 8 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <div class="story-title-wrap">
+                    <span class="story-title">${esc(story.title)}</span>
+                    <input type="text" class="form-input story-title-edit-input hidden" value="${esc(story.title)}">
+                </div>
+                <span class="story-progress ${allDone ? 'all-done' : ''}">${progressText}</span>
+                <div class="story-actions">
+                    <button class="btn-icon danger delete-story-btn" data-id="${esc(story.id)}" title="Delete Story">
+                        <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="story-tasks ${isCollapsed ? 'collapsed' : ''}">
+                ${storyTasks.map(renderTaskHtml).join('')}
+                <div class="story-add-task-row">
+                    <input type="text" class="story-add-task-input" placeholder="Add a task..." data-story-id="${esc(story.id)}">
+                    <button class="btn btn-sm btn-secondary story-add-task-btn" data-story-id="${esc(story.id)}">+ Task</button>
+                </div>
+            </div>
+        </div>`;
+    };
+
+    let html = stories.map(story => renderStoryHtml(story, tasksByStory[story.id] || [])).join('');
+
+    if (orphanTasks.length) {
+        html += `<div class="orphan-tasks-section">
+            <div class="orphan-tasks-header">Other items</div>
+            ${orphanTasks.map(renderTaskHtml).join('')}
+        </div>`;
+    }
+
+    listEl.innerHTML = html;
+
+    // Story collapse toggle
+    listEl.querySelectorAll('.story-collapse-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            const item = btn.closest('.backlog-item');
-            item.querySelector('.backlog-item-title-row').classList.add('hidden');
-            item.querySelector('.backlog-item-edit').classList.remove('hidden');
-            item.querySelector('.backlog-edit-input').focus();
+            const story = (project.backlog || []).find(s => s.id === btn.dataset.id);
+            if (story) {
+                story.collapsed = !story.collapsed;
+                saveState();
+                renderBacklog(project);
+            }
         });
     });
 
-    // Click title span to also activate edit
-    listEl.querySelectorAll('.backlog-item-title').forEach(span => {
+    // Story title inline edit
+    listEl.querySelectorAll('.story-title').forEach(span => {
         span.addEventListener('click', () => {
-            const item = span.closest('.backlog-item');
-            item.querySelector('.backlog-item-title-row').classList.add('hidden');
-            item.querySelector('.backlog-item-edit').classList.remove('hidden');
-            const input = item.querySelector('.backlog-edit-input');
+            const input = span.nextElementSibling;
+            span.classList.add('hidden');
+            input.classList.remove('hidden');
             input.focus();
             input.select();
         });
     });
 
-    listEl.querySelectorAll('.backlog-cancel-edit-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const item = btn.closest('.backlog-item');
-            item.querySelector('.backlog-item-title-row').classList.remove('hidden');
-            item.querySelector('.backlog-item-edit').classList.add('hidden');
+    listEl.querySelectorAll('.story-title-edit-input').forEach(input => {
+        const commit = () => {
+            const storyId = input.closest('.story-group')?.dataset.id;
+            const newTitle = input.value.trim();
+            if (newTitle && storyId) {
+                const story = (project.backlog || []).find(s => s.id === storyId);
+                if (story) { story.title = newTitle; saveState(); }
+            }
+            input.classList.add('hidden');
+            input.previousElementSibling.classList.remove('hidden');
+        };
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') input.blur();
+            if (e.key === 'Escape') {
+                const story = (project.backlog || []).find(s => s.id === input.closest('.story-group')?.dataset.id);
+                if (story) input.value = story.title;
+                input.blur();
+            }
         });
     });
 
-    listEl.querySelectorAll('.backlog-save-edit-btn').forEach(btn => {
+    // Delete story (and its tasks)
+    listEl.querySelectorAll('.delete-story-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            const item = btn.closest('.backlog-item');
-            const taskId = item.dataset.id;
-            const newTitle = item.querySelector('.backlog-edit-input').value.trim();
-            if (!newTitle) return;
+            const storyId = btn.dataset.id;
+            const story = (project.backlog || []).find(s => s.id === storyId);
+            if (!story) return;
+            const storyTasks = (project.backlog || []).filter(t => t.type === 'task' && t.linkedStoryId === storyId);
+            const msg = storyTasks.length
+                ? `Delete story "${story.title}" and its ${storyTasks.length} task(s)? This cannot be undone.`
+                : `Delete story "${story.title}"?`;
+            if (!confirm(msg)) return;
+            project.backlog = (project.backlog || []).filter(i => i.id !== storyId && !(i.type === 'task' && i.linkedStoryId === storyId));
+            saveState();
+            renderBacklog(project);
+        });
+    });
+
+    // Add task to story
+    listEl.querySelectorAll('.story-add-task-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            addTaskToStory(project, btn.dataset.storyId, btn.previousElementSibling);
+        });
+    });
+
+    listEl.querySelectorAll('.story-add-task-input').forEach(input => {
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); addTaskToStory(project, input.dataset.storyId, input); }
+        });
+    });
+
+    // Task title inline edit
+    listEl.querySelectorAll('.task-title').forEach(span => {
+        span.addEventListener('click', () => {
+            const input = span.nextElementSibling;
+            span.classList.add('hidden');
+            input.classList.remove('hidden');
+            input.focus();
+            input.select();
+        });
+    });
+
+    listEl.querySelectorAll('.task-title-edit-input').forEach(input => {
+        const commit = () => {
+            const taskId = input.closest('.backlog-task')?.dataset.id;
+            const newTitle = input.value.trim();
+            if (newTitle && taskId) {
+                const task = (project.backlog || []).find(t => t.id === taskId);
+                if (task) { task.title = newTitle; saveState(); }
+            }
+            input.classList.add('hidden');
+            input.previousElementSibling.classList.remove('hidden');
+        };
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') input.blur();
+            if (e.key === 'Escape') {
+                const task = (project.backlog || []).find(t => t.id === input.closest('.backlog-task')?.dataset.id);
+                if (task) input.value = task.title;
+                input.blur();
+            }
+        });
+    });
+
+    // Delete task
+    listEl.querySelectorAll('.delete-task-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const taskId = btn.dataset.id;
             const task = (project.backlog || []).find(t => t.id === taskId);
-            if (task) {
-                task.title = newTitle;
-                saveState();
-                renderBacklog(project);
-            }
+            if (!task || !confirm(`Delete task "${task.title}"?`)) return;
+            project.backlog = (project.backlog || []).filter(t => t.id !== taskId);
+            saveState();
+            renderBacklog(project);
         });
     });
 
-    // Move to sprint
+    // Move task to sprint
     listEl.querySelectorAll('.move-sprint-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const taskId = btn.dataset.id;
-            const sprints = state.boards.filter(b => b.projectId === project.id);
-            if (!sprints.length) { showToast('No sprints. Create a sprint first.', 'warning'); return; }
-            if (sprints.length === 1) {
-                moveBacklogItemToSprint(project, taskId, sprints[0].id);
-            } else {
-                _pendingBacklogTaskId = taskId;
-                const pickerList = document.getElementById('sprintPickerList');
-                if (pickerList) {
-                    pickerList.innerHTML = sprints.map(s => `
-                        <button class="sprint-picker-item" data-sprint-id="${s.id}">
-                            <div class="sprint-picker-color" style="background:${s.background || 'var(--accent-primary)'}"></div>
-                            <span>${esc(s.name)}</span>
-                        </button>
-                    `).join('');
-                    pickerList.querySelectorAll('.sprint-picker-item').forEach(item => {
-                        item.addEventListener('click', () => {
-                            moveBacklogItemToSprint(project, _pendingBacklogTaskId, item.dataset.sprintId);
-                            document.getElementById('sprintPickerModal').classList.remove('active');
-                            _pendingBacklogTaskId = null;
-                        });
-                    });
-                }
-                document.getElementById('sprintPickerModal').classList.add('active');
-            }
-        });
-    });
-
-    // Delete backlog item
-    listEl.querySelectorAll('.delete-backlog-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const taskId = btn.dataset.id;
-            if (confirm('Remove backlog item?')) {
-                project.backlog = project.backlog.filter(t => t.id !== taskId);
-                saveState();
-                renderBacklog(project);
-            }
-        });
+        btn.addEventListener('click', () => openSprintPickerFor(project, btn.dataset.id));
     });
 };
 
-// Add to Backlog
+// Add Story to Backlog
 const addToBacklog = () => {
     const input = document.getElementById('backlogInput');
     const val = input?.value.trim();
     if (val && state.currentProjectId) {
         const project = state.projects.find(p => p.id === state.currentProjectId);
         if (!project.backlog) project.backlog = [];
-        project.backlog.push({ id: generateId(), title: val, status: 'open', addedAt: new Date().toISOString() });
+        project.backlog.push({ id: generateId(), type: 'story', title: val, status: 'open', addedAt: new Date().toISOString() });
         saveState();
         renderBacklog(project);
         input.value = '';

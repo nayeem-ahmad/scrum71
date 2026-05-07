@@ -486,6 +486,10 @@
                     </div>
                 </div>
                 <div class="card-sidebar">
+                    <div class="sidebar-section" id="cardStorySidebarSection">
+                        <h4>Story</h4>
+                        <div id="cardStoryDisplay" class="card-story-none">No story linked</div>
+                    </div>
                     <div class="sidebar-section">
                         <h4>Labels</h4>
                         <div class="label-picker" id="labelPicker">
@@ -907,9 +911,9 @@
                                 <h3>Project Backlog</h3>
                             </div>
                             <div class="backlog-input-container">
-                                <input type="text" id="backlogInput" placeholder="Add a new task to backlog..."
+                                <input type="text" id="backlogInput" placeholder="Add a story title..."
                                     class="form-input">
-                                <button class="btn btn-primary" id="addToBacklogBtn">Add</button>
+                                <button class="btn btn-primary" id="addToBacklogBtn">Add Story</button>
                             </div>
                             <div class="backlog-list" id="backlogList">
                                 <!-- Backlog items -->
