@@ -1,8 +1,8 @@
 # Flowboard Kanban - Implementation Summary
 
 ## Repository Information
-- **GitHub URL**: https://github.com/nayeem-ahmad/flowboard-kanban
-- **Local Path**: `/Users/bs01621/Projects/nayeem/flowboard-kanban`
+- **GitHub URL**: https://github.com/nayeem-ahmad/scrum71
+- **Local Path**: `/Users/bs01621/Projects/nayeem/scrum71`
 - **Current Branch**: `main`
 - **Last Updated**: April 23, 2026
 
@@ -102,5 +102,5 @@ docs/stories/        - Updated story statuses
 The application is ready for testing with Firebase configuration. Update `src/js/config.js` with your Firebase project credentials to enable Firestore persistence.
 
 ## Contact
-- **Repository**: https://github.com/nayeem-ahmad/flowboard-kanban
+- **Repository**: https://github.com/nayeem-ahmad/scrum71
 - **Local Development**: Open `index.html` in browser or run a local server

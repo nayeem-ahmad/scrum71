@@ -1,7 +1,7 @@
 # Flowboard Kanban - Current Status
 
 ## 📍 Repository URL
-**GitHub**: https://github.com/nayeem-ahmad/flowboard-kanban
+**GitHub**: https://github.com/nayeem-ahmad/scrum71
 
 ## 🚀 Implementation Progress (April 23, 2026)
 
@@ -40,13 +40,13 @@
 4. Test with actual Firebase credentials
 
 ## 🚀 **Quick Start**
-1. Clone the repository: `git clone https://github.com/nayeem-ahmad/flowboard-kanban.git`
+1. Clone the repository: `git clone https://github.com/nayeem-ahmad/scrum71.git`
 2. Open `index.html` in a browser
 3. For Firestore persistence, update `src/js/config.js` with your Firebase credentials
 
 ## 📊 **Project Structure**
 ```
-flowboard-kanban/
+scrum71/
 ├── src/js/
 │   ├── store.js      # Central data store with Firestore persistence
 │   ├── app.js        # Card modal, checklists, board creation
@@ -60,7 +60,7 @@ flowboard-kanban/
 ```
 
 ## 📞 **Contact & Links**
-- **GitHub Repository**: https://github.com/nayeem-ahmad/flowboard-kanban
-- **Local Path**: `/Users/bs01621/Projects/nayeem/flowboard-kanban`
+- **GitHub Repository**: https://github.com/nayeem-ahmad/scrum71
+- **Local Path**: `/Users/bs01621/Projects/nayeem/scrum71`
 - **Current Branch**: `main`
 - **Last Updated**: April 23, 2026

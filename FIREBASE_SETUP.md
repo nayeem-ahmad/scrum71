@@ -40,7 +40,7 @@ Then navigate to `http://localhost:8080`
 ## Deploying to GitHub Pages
 
 The app is already configured for GitHub Pages deployment at:
-`https://nayeem-ahmad.github.io/flowboard-kanban/`
+`https://nayeem-ahmad.github.io/scrum71/`
 
 Just push your changes to the repository and GitHub Pages will automatically deploy.
 
