@@ -1,7 +1,10 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-
-const BASE_URL = 'http://localhost:7890';
+const {
+  loadGuestBoard,
+  getPersistedState,
+  waitForCardInPersistedList,
+} = require('./helpers');
 
 // Seed state: 2 lists, 3 cards in list 1, 1 card in list 2
 const TEST_STATE = {
@@ -38,37 +41,21 @@ const TEST_STATE = {
   ]
 };
 
-async function loadBoard(page) {
-  // Block Firebase CDN → isFirebaseConfigured = false → guest mode
-  await page.route('**gstatic.com/firebasejs/**', route => route.abort());
-  await page.route('**firebaseapp.com/**', route => route.abort());
-
-  // Seed localStorage before page scripts run
-  await page.addInitScript((stateJson) => {
-    localStorage.setItem('flowboard-state', stateJson);
-  }, JSON.stringify(TEST_STATE));
-
-  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.list', { timeout: 12000 });
-}
-
 // ---------------------------------------------------------------------------
 // AC 1 – Cards are draggable (have draggable attribute)
 // ---------------------------------------------------------------------------
 test('AC1: cards have draggable attribute and get "dragging" class on dragstart', async ({ page }) => {
-  await loadBoard(page);
+  await loadGuestBoard(page, TEST_STATE);
 
   const card = page.locator('.card').first();
   await expect(card).toHaveAttribute('draggable', 'true');
 
-  // Fire dragstart via evaluate (DataTransfer must be a real object)
   await card.evaluate(el => {
     const dt = new DataTransfer();
     el.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }));
   });
   await expect(card).toHaveClass(/dragging/);
 
-  // Fire dragend to clean up
   await card.evaluate(el => el.dispatchEvent(new DragEvent('dragend', { bubbles: true })));
 });
 
@@ -76,7 +63,7 @@ test('AC1: cards have draggable attribute and get "dragging" class on dragstart'
 // AC 2 – Drop zone highlights when card hovers
 // ---------------------------------------------------------------------------
 test('AC2: list-cards container gets "drag-over" class on dragover', async ({ page }) => {
-  await loadBoard(page);
+  await loadGuestBoard(page, TEST_STATE);
 
   const card = page.locator('.card').first();
   const listCards = page.locator('.list-cards').first();
@@ -88,7 +75,6 @@ test('AC2: list-cards container gets "drag-over" class on dragover', async ({ pa
     el.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }));
   });
 
-  // Simulate dragover on the list container
   await listCards.evaluate((el, y) => {
     const dt = new DataTransfer();
     el.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true, clientY: y }));
@@ -103,7 +89,7 @@ test('AC2: list-cards container gets "drag-over" class on dragover', async ({ pa
 // AC 3 – Insertion placeholder appears between cards
 // ---------------------------------------------------------------------------
 test('AC3: card-placeholder element appears during drag hover', async ({ page }) => {
-  await loadBoard(page);
+  await loadGuestBoard(page, TEST_STATE);
 
   const card = page.locator('.card').first();
   const listCards = page.locator('.list-cards').first();
@@ -128,7 +114,7 @@ test('AC3: card-placeholder element appears during drag hover', async ({ page })
 // AC 4 & 5 – Moving a card via mouse drag persists order/list change
 // ---------------------------------------------------------------------------
 test('AC4+AC5: dragging card to second list moves it and preserves after save', async ({ page }) => {
-  await loadBoard(page);
+  await loadGuestBoard(page, TEST_STATE);
 
   const lists = page.locator('.list');
   const listCount = await lists.count();
@@ -150,22 +136,24 @@ test('AC4+AC5: dragging card to second list moves it and preserves after save', 
   const cardToMove = sourceCards.first();
   const cardTitle = (await cardToMove.locator('.card-title-text').textContent())?.trim();
 
-  // Use Playwright's dragTo for proper HTML5 DnD across lists
   const targetListCards = targetList.locator('.list-cards');
   await cardToMove.dragTo(targetListCards);
-  await page.waitForTimeout(400);
 
-  // Card should now be in second list
-  const targetCards = targetList.locator('.card');
-  const titlesInTarget = await targetCards.locator('.card-title-text').allTextContents();
-  expect(titlesInTarget.some(t => t.trim() === cardTitle)).toBeTruthy();
+  await expect(targetList.locator('.card').filter({ hasText: cardTitle })).toBeVisible({ timeout: 5000 });
+  await waitForCardInPersistedList(page, 'l2', cardTitle);
+
+  const persisted = await getPersistedState(page);
+  const board = persisted.boards.find(b => b.id === 'b1');
+  const list2 = board.lists.find(l => l.id === 'l2');
+  expect(list2.cards.some(c => c.title === cardTitle)).toBeTruthy();
+  expect(board.lists.find(l => l.id === 'l1').cards.some(c => c.title === cardTitle)).toBeFalsy();
 });
 
 // ---------------------------------------------------------------------------
 // AC 4 – Reorder cards within the same list
 // ---------------------------------------------------------------------------
 test('AC4: reordering within a list changes card order', async ({ page }) => {
-  await loadBoard(page);
+  await loadGuestBoard(page, TEST_STATE);
 
   const firstList = page.locator('.list').first();
   const cards = firstList.locator('.card');
@@ -175,22 +163,25 @@ test('AC4: reordering within a list changes card order', async ({ page }) => {
     return;
   }
 
+  const firstTitle = (await cards.nth(0).locator('.card-title-text').textContent())?.trim();
   const secondTitle = (await cards.nth(1).locator('.card-title-text').textContent())?.trim();
 
-  // Use Playwright's proper dragTo for HTML5 DnD
   await cards.nth(0).dragTo(cards.nth(2));
-  await page.waitForTimeout(400);
 
+  await expect(cards.nth(0)).not.toHaveText(firstTitle, { timeout: 5000 });
   const newFirst = (await cards.nth(0).locator('.card-title-text').textContent())?.trim();
-  // Order should have changed (card 0 moved below card 2)
   expect(newFirst).toBe(secondTitle);
+
+  const persisted = await getPersistedState(page);
+  const list1 = persisted.boards[0].lists.find(l => l.id === 'l1');
+  expect(list1.cards[0].title).toBe(secondTitle);
 });
 
 // ---------------------------------------------------------------------------
 // AC 6 – Drag animations: CSS class check on dragging card
 // ---------------------------------------------------------------------------
 test('AC6: dragging card has "dragging" CSS class (animation trigger)', async ({ page }) => {
-  await loadBoard(page);
+  await loadGuestBoard(page, TEST_STATE);
 
   const card = page.locator('.card').first();
 
@@ -208,7 +199,7 @@ test('AC6: dragging card has "dragging" CSS class (animation trigger)', async ({
 // AC 7 – Touch support: touchstart + long press activates drag mode
 // ---------------------------------------------------------------------------
 test('AC7: long touch press on card activates touch drag mode', async ({ page }) => {
-  await loadBoard(page);
+  await loadGuestBoard(page, TEST_STATE);
 
   const card = page.locator('.card').first();
   const box = await card.boundingBox();
@@ -217,19 +208,15 @@ test('AC7: long touch press on card activates touch drag mode', async ({ page })
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
 
-  // Simulate touchstart
   await card.dispatchEvent('touchstart', {
     touches: [{ clientX: x, clientY: y, identifier: 0 }],
     changedTouches: [{ clientX: x, clientY: y, identifier: 0 }],
   });
 
-  // Wait for long-press threshold (300ms)
   await page.waitForTimeout(400);
 
-  // Card should now be in drag mode
   await expect(card).toHaveClass(/dragging/);
 
-  // Fire touchend to clean up
   await card.dispatchEvent('touchend', {
     changedTouches: [{ clientX: x, clientY: y, identifier: 0 }],
     touches: [],
