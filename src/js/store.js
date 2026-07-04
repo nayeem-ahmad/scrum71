@@ -196,7 +196,7 @@ export const saveState = async () => {
                     ...board,
                     memberEmails,
                     ownerId: board.ownerId || board.owner?.id || null,
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    updatedAt: board.updatedAt || new Date().toISOString()
                 }, { merge: true });
             }
 
@@ -207,7 +207,7 @@ export const saveState = async () => {
                     ...project,
                     memberEmails,
                     ownerId: project.ownerId || project.owner?.id || null,
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    updatedAt: project.updatedAt || new Date().toISOString()
                 }, { merge: true });
             }
         } catch (error) {
@@ -218,6 +218,10 @@ export const saveState = async () => {
 };
 
 export const loadState = async () => {
+    // 0. Load the local state first
+    const saved = localStorage.getItem('flowboard-state');
+    const localState = saved ? JSON.parse(saved) : null;
+
     if (isFirebaseConfigured && _currentUser) {
         try {
             // 1. Get User Preferences
@@ -234,11 +238,10 @@ export const loadState = async () => {
                 .where('memberEmails', 'array-contains', _currentUser.email)
                 .get();
 
-            const projects = [];
+            const remoteProjects = [];
             projectsSnapshot.forEach(doc => {
-                projects.push(doc.data());
+                remoteProjects.push(doc.data());
             });
-            state.projects = projects;
 
             // 3. Query boards
             const boardsMap = new Map();
@@ -251,7 +254,7 @@ export const loadState = async () => {
             membershipBoardsSnapshot.forEach(doc => boardsMap.set(doc.id, doc.data()));
 
             // 3b. Boards that belong to my projects
-            const projectIds = projects.map(p => p.id);
+            const projectIds = remoteProjects.map(p => p.id);
             if (projectIds.length > 0) {
                 const chunks = [];
                 for (let i = 0; i < projectIds.length; i += 10) {
@@ -271,7 +274,81 @@ export const loadState = async () => {
                 }
             }
 
-            state.boards = Array.from(boardsMap.values());
+            const remoteBoards = Array.from(boardsMap.values());
+
+            // 4. Reconcile local and remote data
+            let needsRemoteSync = false;
+            const reconciledProjects = [];
+            const reconciledBoards = [];
+
+            const getTimestamp = (val) => {
+                if (!val) return 0;
+                if (val.seconds) return val.seconds * 1000; // Firestore Timestamp
+                if (val.toDate && typeof val.toDate === 'function') return val.toDate().getTime();
+                return new Date(val).getTime();
+            };
+
+            const isNewer = (localObj, remoteObj) => {
+                const localTime = getTimestamp(localObj?.updatedAt);
+                const remoteTime = getTimestamp(remoteObj?.updatedAt);
+                return localTime > remoteTime;
+            };
+
+            // Reconcile Projects
+            for (const remoteProj of remoteProjects) {
+                const localProj = localState?.projects?.find(p => p.id === remoteProj.id);
+                if (localProj && isNewer(localProj, remoteProj)) {
+                    reconciledProjects.push(localProj);
+                    needsRemoteSync = true;
+                } else {
+                    reconciledProjects.push(remoteProj);
+                }
+            }
+
+            if (localState?.projects) {
+                for (const localProj of localState.projects) {
+                    const existsOnServer = remoteProjects.some(p => p.id === localProj.id);
+                    if (!existsOnServer) {
+                        const isMyProject = localProj.ownerId === _currentUser.uid || 
+                                           localProj.owner?.id === _currentUser.uid ||
+                                           (localProj.memberEmails && localProj.memberEmails.includes(_currentUser.email));
+                        if (isMyProject) {
+                            reconciledProjects.push(localProj);
+                            needsRemoteSync = true;
+                        }
+                    }
+                }
+            }
+
+            // Reconcile Boards
+            for (const remoteBoard of remoteBoards) {
+                const localBoard = localState?.boards?.find(b => b.id === remoteBoard.id);
+                if (localBoard && isNewer(localBoard, remoteBoard)) {
+                    reconciledBoards.push(localBoard);
+                    needsRemoteSync = true;
+                } else {
+                    reconciledBoards.push(remoteBoard);
+                }
+            }
+
+            if (localState?.boards) {
+                for (const localBoard of localState.boards) {
+                    const existsOnServer = remoteBoards.some(b => b.id === localBoard.id);
+                    if (!existsOnServer) {
+                        const isMyBoard = localBoard.ownerId === _currentUser.uid ||
+                                          localBoard.owner?.id === _currentUser.uid ||
+                                          (localBoard.memberEmails && localBoard.memberEmails.includes(_currentUser.email));
+                        if (isMyBoard) {
+                            reconciledBoards.push(localBoard);
+                            needsRemoteSync = true;
+                        }
+                    }
+                }
+            }
+
+            // Update local state references
+            state.projects = reconciledProjects;
+            state.boards = reconciledBoards;
 
             if (state.boards.length > 0) {
                 state.currentBoardId = serverCurrentBoardId || state.boards[0].id;
@@ -280,8 +357,8 @@ export const loadState = async () => {
                 }
             }
 
-            if (projects.length > 0) {
-                state.currentProjectId = serverCurrentProjectId || projects[0].id;
+            if (state.projects.length > 0) {
+                state.currentProjectId = serverCurrentProjectId || state.projects[0].id;
                 if (!state.projects.find(p => p.id === state.currentProjectId)) {
                     state.currentProjectId = state.projects[0].id;
                 }
@@ -292,23 +369,35 @@ export const loadState = async () => {
                     saveState();
                 }
             }
+
+            // 5. If we had newer local data, sync them to Firestore
+            if (needsRemoteSync) {
+                await saveState();
+            } else {
+                localStorage.setItem('flowboard-state', JSON.stringify(state));
+            }
             return;
         } catch (error) {
             console.error('Error loading from Firestore:', error);
+            // Fallback to localState if offline/failed
+            if (localState) {
+                state.boards = localState.boards || [];
+                state.projects = localState.projects || [];
+                state.currentBoardId = localState.currentBoardId;
+                state.currentProjectId = localState.currentProjectId;
+                state.editingCard = localState.editingCard;
+                return;
+            }
         }
     }
 
-    // Fallback to localStorage
-    const saved = localStorage.getItem('flowboard-state');
-    if (saved) {
-        const parsed = JSON.parse(saved);
-        // Direct assignment to state properties to maintain reference if possible, 
-        // but state is exported as let.
-        state.boards = parsed.boards || [];
-        state.projects = parsed.projects || [];
-        state.currentBoardId = parsed.currentBoardId;
-        state.currentProjectId = parsed.currentProjectId;
-        state.editingCard = parsed.editingCard;
+    // Fallback to localStorage (not logged in / guest mode)
+    if (localState) {
+        state.boards = localState.boards || [];
+        state.projects = localState.projects || [];
+        state.currentBoardId = localState.currentBoardId;
+        state.currentProjectId = localState.currentProjectId;
+        state.editingCard = localState.editingCard;
     } else {
         initializeSampleData();
     }
@@ -506,6 +595,7 @@ export const createList = async (boardId, title) => {
     
     // Add to local state
     board.lists.push(newList);
+    board.updatedAt = new Date().toISOString();
     
     // Save to Firestore if configured
     if (isFirebaseConfigured && _currentUser) {
@@ -542,6 +632,7 @@ export const updateListTitle = async (boardId, listId, newTitle) => {
     
     const oldTitle = list.title;
     list.title = newTitle.trim();
+    board.updatedAt = new Date().toISOString();
     
     // Save to Firestore if configured
     if (isFirebaseConfigured && _currentUser) {
@@ -572,6 +663,7 @@ export const deleteList = async (boardId, listId) => {
     
     // Remove from local state
     board.lists.splice(listIndex, 1);
+    board.updatedAt = new Date().toISOString();
     
     // Update order for remaining lists
     board.lists.forEach((list, index) => {
@@ -618,6 +710,7 @@ export const reorderLists = async (boardId, listOrder) => {
     });
     
     board.lists = newLists;
+    board.updatedAt = new Date().toISOString();
     
     // Save to Firestore if configured
     if (isFirebaseConfigured && _currentUser) {
@@ -680,6 +773,7 @@ export const createCard = async (boardId, listId, title, description = '') => {
     
     // Add to local state
     list.cards.push(newCard);
+    board.updatedAt = new Date().toISOString();
     
     // Save to Firestore if configured
     if (isFirebaseConfigured && _currentUser) {
@@ -713,6 +807,7 @@ export const updateCard = async (boardId, listId, cardId, updates) => {
     
     // Update local state
     Object.assign(card, updates, { updatedAt: new Date().toISOString() });
+    board.updatedAt = new Date().toISOString();
     
     // Save to Firestore if configured
     if (isFirebaseConfigured && _currentUser) {
@@ -745,6 +840,7 @@ export const deleteCard = async (boardId, listId, cardId) => {
     
     // Remove from local state
     list.cards.splice(cardIndex, 1);
+    board.updatedAt = new Date().toISOString();
     
     // Save to Firestore if configured
     if (isFirebaseConfigured && _currentUser) {
@@ -781,6 +877,7 @@ export const moveCard = async (boardId, sourceListId, targetListId, cardId, newI
 
     sourceList.cards.splice(cardIndex, 1);
     targetList.cards.splice(insertIndex, 0, card);
+    board.updatedAt = new Date().toISOString();
     
     // Save to Firestore if configured
     if (isFirebaseConfigured && _currentUser) {

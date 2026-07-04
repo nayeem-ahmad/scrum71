@@ -18,6 +18,18 @@ try {
         firebase.initializeApp(firebaseConfig);
         auth = firebase.auth();
         db = firebase.firestore();
+        
+        // Enable Firestore offline persistence
+        db.enablePersistence().catch((err) => {
+            if (err.code === 'failed-precondition') {
+                console.warn('Firestore persistence failed: Multiple tabs open.');
+            } else if (err.code === 'unimplemented') {
+                console.warn('Firestore persistence failed: Browser not supported.');
+            } else {
+                console.warn('Firestore persistence failed:', err);
+            }
+        });
+
         if (typeof firebase.storage !== 'undefined') {
             storage = firebase.storage();
         }

@@ -1,6 +1,6 @@
 import { initAuth } from './auth.js';
 import { renderBoard } from './board.js';
-import { state, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentBoard, getActiveProject, getCurrentUser, getBoardsForProject, deleteCard as deleteCardFromStore, createCard, updateCard, createBoard, createProject, updateBoard, updateProject } from './store.js';
+import { state, loadState, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentBoard, getActiveProject, getCurrentUser, getBoardsForProject, deleteCard as deleteCardFromStore, createCard, updateCard, createBoard, createProject, updateBoard, updateProject } from './store.js';
 import { showToast, generateUniqueProjectName, generateId, getEffectiveRemainingHours, getSpentHours, formatSprintDuration, getProjectTeamMembers, getProjectLabels } from './utils.js';
 import { isFirebaseConfigured, storage } from './config.js';
 import { renderProjectManagement, unlinkBacklogFromCard } from './project.js';
@@ -1766,3 +1766,25 @@ export const handleCardDeepLink = () => {
     const query = clean.searchParams.toString();
     window.history.replaceState({}, '', query ? `${clean.pathname}?${query}` : clean.pathname);
 };
+
+// ================================
+// ONLINE/OFFLINE CONNECTION SYNC
+// ================================
+
+window.addEventListener('online', async () => {
+    showToast('You are back online. Syncing data...', 'info');
+    const user = getCurrentUser();
+    if (user) {
+        try {
+            await loadState();
+            renderBoard();
+            showToast('Cloud sync complete!', 'success');
+        } catch (error) {
+            console.error('Failed to sync on reconnect:', error);
+        }
+    }
+});
+
+window.addEventListener('offline', () => {
+    showToast('Working offline. Changes will save locally.', 'warning');
+});
