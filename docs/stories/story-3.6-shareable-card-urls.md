@@ -1,7 +1,7 @@
 # Story 3.6: Shareable Card URLs
 
 ## Status
-Draft
+Complete (June 11, 2026)
 
 ## Story
 **As a** user,  
@@ -17,18 +17,17 @@ Draft
 6. Invalid card URLs show not-found message
 
 ## Tasks / Subtasks
-- [ ] Task 1: URL Routing/Parsing
-  - [ ] Define URL structure: `app/?project=...&board=...&card=<cardId>`
-  - [ ] Implement logic on app load to check for `card` param
+- [x] Task 1: URL Routing/Parsing
+  - [x] URL structure: `?board=<boardId>&card=<cardId>` (optional `project`)
+  - [x] `handleCardDeepLink` runs after board loads
 
-- [ ] Task 2: Deep Linking Logic
-  - [ ] After board loads, find card by ID
-  - [ ] If found, automatically trigger `openCardModal`
+- [x] Task 2: Deep Linking Logic
+  - [x] Switches board/project from URL params
+  - [x] Opens card modal when card is found; error toasts otherwise
 
-- [ ] Task 3: UI Actions
-  - [ ] Add "Copy Link" button to Card Modal header
-  - [ ] Copy correct deep link to clipboard
-  - [ ] Show toast "Link copied"
+- [x] Task 3: UI Actions
+  - [x] "Copy Link" button in card modal actions
+  - [x] Copies deep link to clipboard with success toast
 
 ## Dev Notes
 - Ensure race conditions are handled (wait for board data to load before trying to open card).

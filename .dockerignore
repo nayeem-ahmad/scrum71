@@ -1,0 +1,12 @@
+node_modules
+.git
+.github
+test-results
+playwright-report
+tests
+docs
+*.md
+todo.md
+.env
+.env.*
+.getaibd/

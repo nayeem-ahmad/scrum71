@@ -1,7 +1,7 @@
 # Story 4.4: Burndown Trend Line
 
 ## Status
-Draft
+Complete (June 11, 2026)
 
 ## Story
 **As a** scrum master,  
@@ -16,22 +16,19 @@ Draft
 5. Intersection/divergence is visually clear
 
 ## Tasks / Subtasks
-- [ ] Task 1: Calculate Ideal Burndown Data
-  - [ ] Determine total initial estimate for the sprint (sum of all cards' `initialEstimate` at sprint start)
-  - [ ] Calculate daily decrement needed to reach zero by sprint end date
-  - [ ] Generate an array of data points for the ideal line (starting from total estimate, ending at zero on sprint end)
+- [x] Task 1: Calculate Ideal Burndown Data
+  - [x] `getSprintTotalEstimate(cards)` as ideal line starting value
+  - [x] Linear decrement to zero by sprint end date
 
-- [ ] Task 2: Chart.js Dataset Integration
-  - [ ] Add a second dataset to the Chart.js configuration for the ideal burndown line
-  - [ ] Configure line styling (e.g., `borderDash`, `borderColor`, `fill: false`) for the ideal line
+- [x] Task 2: Chart.js Dataset Integration
+  - [x] "Actual" and "Ideal" datasets with dashed ideal line
 
-- [ ] Task 3: Chart Legend
-  - [ ] Ensure Chart.js legend is configured to clearly show "Actual Burndown" and "Ideal Burndown"
-  - [ ] Customize legend styling if needed for clarity
+- [x] Task 3: Chart Legend
+  - [x] Legend shown in team view when both datasets present
 
-- [ ] Task 4: Visual Clarity
-  - [ ] Adjust chart options (e.g., grid lines, tooltips) to enhance readability and highlight the comparison between actual and ideal progress.
+- [x] Task 4: Visual Clarity
+  - [x] Thicker actual line, tooltip labels with hour suffix
 
 ## Dev Notes
-- Ensure the ideal line calculation accurately reflects the sprint duration and total work.
-- Consider edge cases like very short sprints or zero-estimate sprints.
+- Ideal line uses sum of card `initialEstimate` values (MVP proxy for sprint-start total).
+- Actual line prefers `board.history` snapshots with per-card log fallback.

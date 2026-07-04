@@ -2,7 +2,8 @@
 
 **Goal**: Deliver a fully functional Kanban board where users can authenticate, create boards with lists, manage cards with basic properties (title, description, labels, due date, checklist), and drag-and-drop cards between lists. This epic establishes the core user experience.
 
-## Story 1.1: User Authentication Setup
+## ✅ Story 1.1: User Authentication Setup - **COMPLETED**
+**Status**: Implemented (June 11, 2026)  
 **As a** user,  
 **I want** to register and sign in with email/password or social providers,  
 **so that** I can access my personal boards securely.
@@ -17,7 +18,8 @@
 7. Loading screen displays during auth check
 8. Error messages display for invalid credentials
 
-## Story 1.2: Basic Board Display and Theme
+## ✅ Story 1.2: Basic Board Display and Theme - **COMPLETED**
+**Status**: Implemented (June 11, 2026)  
 **As a** user,  
 **I want** to see a visually appealing board interface with theme support,  
 **so that** I can work comfortably in my preferred color scheme.
@@ -65,10 +67,18 @@
 7. Card can be deleted via modal action
 8. Changes persist immediately
 
-## Story 1.5: Card Labels and Due Dates
+## ✅ Story 1.5: Card Labels and Due Dates - **COMPLETED**
+**Status**: Implemented with Firestore Persistence (June 11, 2026)  
 **As a** user,  
 **I want** to add labels and due dates to cards,  
 **so that** I can categorize and schedule work.
+
+**Implementation Details**:
+- ✅ Label picker with multi-select in card modal
+- ✅ Colored label bars rendered on card tiles
+- ✅ Due date picker with overdue/soon styling
+- ✅ Firestore persistence via `updateCard()` + `saveState()`
+- ✅ Playwright tests in `tests/story-1.5-labels-due-dates.spec.js`
 
 **Acceptance Criteria:**
 1. Card modal shows label picker with color options

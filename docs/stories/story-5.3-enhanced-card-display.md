@@ -1,7 +1,7 @@
 # Story 5.3: Enhanced Card Display
 
 ## Status
-Draft
+Complete (June 11, 2026)
 
 ## Story
 **As a** user,  
@@ -18,23 +18,19 @@ Draft
 7. Cards show attachment icon if files attached
 
 ## Tasks / Subtasks
-- [ ] Task 1: Component Layout Update
-  - [ ] Refactor `createCardElement` (or equivalent component) to support new metadata
-  - [ ] Create a "Card Badges" container at bottom of card
+- [x] Task 1: Component Layout Update
+  - [x] `createCardElement` renders labels, meta row, assignee corner
 
-- [ ] Task 2: Badge Implementation
-  - [ ] **Time Badge:** Show `remainingHours` (e.g., "2h")
-  - [ ] **Checklist Badge:** Show "X/Y" completed (e.g., icon + "3/5")
-  - [ ] **Comments Badge:** Show icon + count if > 0
-  - [ ] **Attachments Badge:** Show paperclip icon + count if > 0
+- [x] Task 2: Badge Implementation
+  - [x] Remaining hours badge (`5h`) and spent/estimate badge
+  - [x] Checklist `X/Y`, comments count, attachments paperclip + count
 
-- [ ] Task 3: Assignee & Date Display
-  - [ ] **Assignee:** Position small avatar in bottom-right corner
-  - [ ] **Due Date:** Position next to badges, color-coded (red for overdue, orange for soon)
+- [x] Task 3: Assignee & Date Display
+  - [x] Assignee avatar bottom-right; due date overdue/soon styling
 
-- [ ] Task 4: Styling & Polish
-  - [ ] Ensure text fits and doesn't clutter the card
-  - [ ] Ensure sufficient contrast for accessibility
+- [x] Task 4: Styling & Polish
+  - [x] Distinct classes for time-remaining vs time-spent; over-budget warning
 
 ## Dev Notes
-- This story aggregates display logic from previous features; ensure it handles missing data gracefully.
+- Attachment display reads `card.attachments` array (upload UI is Story 5.1).
+- `attachments: []` added to default card schema in `createCard`.

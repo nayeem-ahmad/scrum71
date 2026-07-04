@@ -1,7 +1,7 @@
 # Story 2.1: Project Entity and Selector
 
 ## Status
-Draft
+Complete (June 11, 2026)
 
 ## Story
 **As a** user,  
@@ -17,25 +17,21 @@ Draft
 6. New project can be created from selector dropdown
 
 ## Tasks / Subtasks
-- [ ] Task 1: Project Data Model & Service
-  - [ ] Define Project interface/schema (id, name, description, ownerId, memberIds)
-  - [ ] Update Firestore security rules for Projects
-  - [ ] Implement `createProject`, `getProjects`, `updateProject` in `project.js`
+- [x] Task 1: Project Data Model & Service
+  - [x] Project schema with name, description, owner, members, sprintIds, backlog
+  - [x] Firestore rules for projects; `createProject`, `updateProject`, `deleteProject` in `store.js`
 
-- [ ] Task 2: Project Selector UI
-  - [ ] Add Project Selector dropdown to Header
-  - [ ] Populate dropdown with user's projects
-  - [ ] Persist selected project ID in `state` and `localStorage`
+- [x] Task 2: Project Selector UI
+  - [x] Project selector dropdown in header with persistence via `saveState`
+  - [x] Quick-create project form in dropdown
 
-- [ ] Task 3: Board-Project Association
-  - [ ] Update Board creation modal to include Project selection (or auto-select current)
-  - [ ] Update `getBoards` to query by `projectId`
-  - [ ] Filter displayed boards based on selected project
+- [x] Task 3: Board-Project Association
+  - [x] Board creation modal includes project `<select>`
+  - [x] `getBoardsForProject()` filters boards by `projectId`
 
-- [ ] Task 4: Navigation Integration
-  - [ ] Add "Manage Projects" link/button to Project Selector
-  - [ ] Ensure switching projects clears/updates current board view
-  - [ ] Handle "No Project" empty state
+- [x] Task 4: Navigation Integration
+  - [x] "Manage projects" in dropdown + header button
+  - [x] Project switch updates board view; contextual empty states
 
 ## Dev Notes
 - Existing `project.js` likely needs refactoring to separate "Project" entity from "Board" entity if they were conflated.

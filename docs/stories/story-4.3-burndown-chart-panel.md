@@ -1,7 +1,7 @@
 # Story 4.3: Burndown Chart Panel
 
 ## Status
-Draft
+Complete (June 11, 2026)
 
 ## Story
 **As a** scrum master,  
@@ -19,31 +19,20 @@ Draft
 8. Panel can be dragged/repositioned (optional)
 
 ## Tasks / Subtasks
-- [ ] Task 1: Panel Structure
-  - [ ] Create HTML structure for a floating, draggable panel (e.g., `div` with `position: fixed`)
-  - [ ] Add header to the panel with total remaining hours and a collapse/expand button
-  - [ ] Integrate Chart.js canvas element within the panel body
+- [x] Task 1: Panel Structure
+  - [x] Floating panel with header, view toggles, and Chart.js canvas
 
-- [ ] Task 2: Chart Data Aggregation
-  - [ ] Generate an array of date labels from `sprint.startDate` to `sprint.endDate` (inclusive, one per day)
-  - [ ] For each date label `d`, compute `totalRemaining(d)`:
-    - For each card in the sprint, call `getEffectiveRemainingHours(card, endOfDay(d))`
-    - Sum the results
-  - [ ] `getEffectiveRemainingHours(card, t)` returns the `remainingHours` value from the latest entry in `card.remainingHoursLog` where `entry.timestamp <= t`; returns `0` if no entry exists at or before `t`
-  - [ ] Days before any log entry for a card contribute `0` for that card (no estimate logged yet)
+- [x] Task 2: Chart Data Aggregation
+  - [x] Daily totals via `getEffectiveRemainingHours` and `board.history` snapshots
 
-- [ ] Task 3: Chart Initialization & Rendering
-  - [ ] Initialize Chart.js line chart with the aggregated daily totals
-  - [ ] Render the chart when the board loads and a sprint is active
-  - [ ] Update the chart whenever any card in the sprint receives a new `remainingHoursLog` entry (real-time listener triggers re-aggregation)
+- [x] Task 3: Chart Initialization & Rendering
+  - [x] `updateBurndownChart` on board render; team and per-person modes
 
-- [ ] Task 4: Panel Functionality
-  - [ ] Implement collapse/expand for panel content
-  - [ ] (Optional) Implement drag-and-drop repositioning using standard HTML Drag & Drop API
+- [x] Task 4: Panel Functionality
+  - [x] Collapse via `.collapsed` class on toggle
+  - [x] Drag reposition on header with localStorage persistence
+  - [x] Hidden when sprint lacks start/end dates or PM screen is open
 
 ## Dev Notes
-- The shift from a scalar `remainingHours` to `remainingHoursLog` means the chart now reflects true historical state rather than only the current value.
-- `endOfDay(d)` should be `d` at 23:59:59.999` local time so a log entry made any time during that day is included.
-- For performance at MVP scale, re-aggregate all days on any change (lazy optimisation later: only recompute affected days).
-- The `board.js` already includes Chart.js — reuse the existing instance/import.
-- This story depends on Story 4.1 (`getEffectiveRemainingHours` helper) and Story 4.1b (log entries being populated).
+- Panel visibility controlled by `updateBurndownPanelVisibility(board)` in `board.js`.
+- Ideal trend line implemented in team view (Story 4.4 overlap).

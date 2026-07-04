@@ -1,7 +1,7 @@
 # Story 2.5: Add Backlog Items to Sprint
 
 ## Status
-Draft
+Complete (June 11, 2026)
 
 ## Story
 **As a** product owner,  
@@ -17,23 +17,22 @@ Draft
 6. Sprint selector shows available sprints for project
 
 ## Tasks / Subtasks
-- [ ] Task 1: Move to Sprint UI
-  - [ ] Add "Move to Sprint" button/icon on Backlog Items
-  - [ ] Implement Sprint (Board) Selector dropdown/modal
-  - [ ] Filter boards to show only those belonging to current Project
+- [x] Task 1: Move to Sprint UI
+  - [x] Add to sprint button on backlog tasks
+  - [x] Sprint picker modal filtered to current project
+  - [x] Remove-from-sprint button when item is already in a sprint
 
-- [ ] Task 2: Conversion Logic
-  - [ ] Create function `convertBacklogItemToCard(item, boardId)`
-  - [ ] Create new Card in target Board's first list
-  - [ ] Copy title/description from Backlog Item
+- [x] Task 2: Conversion Logic
+  - [x] `createCardFromBacklogItem` creates card in sprint's first list
+  - [x] Copies title, description, and story link
 
-- [ ] Task 3: Backlog Status Update
-  - [ ] Update Backlog Item status to `assigned` or `in-sprint`
-  - [ ] Link Backlog Item to Board ID / Card ID
+- [x] Task 3: Backlog Status Update
+  - [x] Status `in-sprint` with `sprintId` and `cardId` links
+  - [x] `unlinkBacklogFromCard` when linked card is deleted on board
 
-- [ ] Task 4: Feedback & Sync
-  - [ ] Visual indicator in Backlog list for items assigned to sprints
-  - [ ] Toast notification on success
+- [x] Task 4: Feedback & Sync
+  - [x] Sprint badge and `in-sprint` styling in backlog list
+  - [x] Toast notifications for add/remove
 
 ## Dev Notes
 - Decide if Backlog Item is *moved* (removed from backlog) or *linked* (stays in backlog but marked). Story says "Original backlog item remains... (reference)".

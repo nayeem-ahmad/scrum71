@@ -1,7 +1,7 @@
 # Story 3.3: Team Member List and Roles
 
 ## Status
-Draft
+Complete (June 11, 2026)
 
 ## Story
 **As a** project owner,  
@@ -17,19 +17,19 @@ Draft
 6. Team count badge shows total members
 
 ## Tasks / Subtasks
-- [ ] Task 1: Member Data Handling
-  - [ ] Fetch user profiles for all member IDs in project
-  - [ ] Define role types in code (`OWNER`, `ADMIN`, `MEMBER`)
+- [x] Task 1: Member Data Handling
+  - [x] `getProjectTeamMembers()` with `TEAM_ROLES` constants
+  - [x] Project-level team (owner + members array)
 
-- [ ] Task 2: Member List UI
-  - [ ] Create "Team" tab/section in Project Settings
-  - [ ] Render list items with Avatar, Name, Email, Role badge
-  - [ ] Add "Remove" button (conditional on permissions)
+- [x] Task 2: Member List UI
+  - [x] Project info modal + PM Team tab with avatar, name, email, role badges
+  - [x] Team count badge includes owner
+  - [x] Remove button shown only for owner/admin on non-owner members
 
-- [ ] Task 3: Management Actions
-  - [ ] Implement "Remove Member" logic
-  - [ ] (Optional) Implement "Change Role" logic
-  - [ ] Persist changes to Firestore
+- [x] Task 3: Management Actions
+  - [x] Remove member with `updateProject` persistence
+  - [x] Promote/demote admin role (owner/admin only)
+  - [x] Clears assignee from project cards when member removed
 
 ## Dev Notes
 - Ensure one cannot remove themselves if they are the only owner.

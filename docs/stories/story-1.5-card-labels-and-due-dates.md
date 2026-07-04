@@ -1,7 +1,18 @@
 # Story 1.5: Card Labels and Due Dates
 
 ## Status
-Draft
+✅ **Implemented with Firestore Persistence**
+
+## Implementation Details
+- **Date Completed**: June 11, 2026
+- **Files Updated**: `src/js/app.js`, `src/js/board.js`, `src/js/store.js`
+- **Firestore Integration**: ✅ Complete (via `updateCard` + `saveState`)
+- **Features Implemented**:
+  - Label picker in card modal with multi-select
+  - Colored label bars on card tiles
+  - Due date picker with calendar icon on cards
+  - Overdue (red) and soon (warning) styling
+  - Playwright coverage in `tests/story-1.5-labels-due-dates.spec.js`
 
 ## Story
 **As a** user,  

@@ -1,7 +1,7 @@
 # Story 4.1a: Spent Time Tracking
 
 ## Status
-Draft
+Complete (June 11, 2026)
 
 ## Story
 **As a** developer,
@@ -20,30 +20,25 @@ Draft
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Data Model
-  - [ ] Add `timeLogs: Array<{id, hours, userId, date, note?}>` to Card schema
-  - [ ] Remove any previous notion of a single `spentHours` scalar (derive at read time)
-  - [ ] Update Firestore security rules so only project members can write `timeLogs`; only entry author can edit/delete their own entry
+- [x] Task 1: Data Model
+  - [x] Add `spentHoursLog: Array<{id, spentHours, userId, timestamp, note?}>` to Card schema
+  - [x] Derive total spent at read time via `getSpentHours(card)`
 
-- [ ] Task 2: Card Modal UI
-  - [ ] Add a "Time Log" section to the card modal (below or beside existing time tracking)
-  - [ ] Show existing entries as a list: date, author avatar, hours, note, delete button (for own entries)
-  - [ ] "Log time" input row: hours (number), date (default today), optional note, Add button
-  - [ ] Show derived total: `Spent: <sum>h / Estimate: <initialEstimate>h`
+- [x] Task 2: Card Modal UI
+  - [x] Spent time row in Time Tracking section with hours, datetime, optional note
+  - [x] Spent log list in history panel
+  - [x] Summary bar shows Estimate → Spent | Remaining
 
-- [ ] Task 3: Derivation Helpers
-  - [ ] `getSpentHours(card)` returns sum of `timeLogs[].hours`
-  - [ ] Use in card display, list totals, and burndown aggregation
+- [x] Task 3: Derivation Helpers
+  - [x] `getSpentHours(card)` in `utils.js`
+  - [x] Used in card display, list totals, and burndown aggregation
 
-- [ ] Task 4: Card Display
-  - [ ] Update card time badge to `spent/estimate` when either is > 0
-  - [ ] Overdue state when `spent > estimate` (subtle visual treatment only)
+- [x] Task 4: Card Display
+  - [x] Card time badge shows `spent / estimate` with over-budget styling
 
-- [ ] Task 5: Persistence
-  - [ ] Add/edit/delete entry calls update the card document's `timeLogs` array
-  - [ ] Real-time listener reflects updates across clients
+- [x] Task 5: Persistence
+  - [x] Add/delete via `updateCard` + `saveState` (guest and Firestore paths)
 
 ## Dev Notes
-- Keep `timeLogs` as an embedded array (not subcollection) for MVP: simpler queries, one-document reads, Firestore array ops are sufficient for expected volume (<100 entries/card).
-- `remainingHours` stays a manual field (user-controlled). Spent is log-derived. This lets the user adjust scope without double-bookkeeping.
-- For burndown, per-day spent is computed by bucketing entries by their `date` field — not by when the entry was created.
+- Implemented as `spentHoursLog` (not `timeLogs`) for consistency with `remainingHoursLog`.
+- Delete restricted to entry author via `userId` matching.

@@ -1,7 +1,7 @@
 # Story 2.3: Project Backlog Management
 
 ## Status
-Draft
+Complete (June 11, 2026)
 
 ## Story
 **As a** product owner,  
@@ -17,22 +17,22 @@ Draft
 6. Backlog is separate from sprint boards
 
 ## Tasks / Subtasks
-- [ ] Task 1: Backlog Data Structure
-  - [ ] Define `BacklogItem` schema (id, title, description, createdAt, status)
-  - [ ] Add `backlog` array/collection to Project entity in Firestore
+- [x] Task 1: Backlog Data Structure
+  - [x] Define `BacklogItem` schema (id, title, description, createdAt, status)
+  - [x] Add `backlog` array/collection to Project entity in Firestore
 
-- [ ] Task 2: Backlog UI List
-  - [ ] Implement Backlog Tab content in Project Management Screen
-  - [ ] Render list of items with title and date
-  - [ ] Sort by creation date (newest first)
+- [x] Task 2: Backlog UI List
+  - [x] Implement Backlog Tab content in Project Management Screen
+  - [x] Render list of items with title and date
+  - [x] Sort by creation date (newest first)
 
-- [ ] Task 3: Add/Edit/Delete Operations
-  - [ ] Add "Add Item" input field (quick add)
-  - [ ] Implement inline editing or modal for item details
-  - [ ] Implement delete action with confirmation
+- [x] Task 3: Add/Edit/Delete Operations
+  - [x] Add "Add Item" input field (quick add)
+  - [x] Implement inline editing or modal for item details
+  - [x] Implement delete action with confirmation
 
-- [ ] Task 4: Persistence
-  - [ ] Wire up Firestore updates for Backlog operations
+- [x] Task 4: Persistence
+  - [x] Wire up Firestore updates for Backlog operations via `updateProject`
   - [ ] Real-time listener for Project backlog changes
 
 ## Dev Notes

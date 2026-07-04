@@ -1,7 +1,17 @@
 # Story 1.1: User Authentication Setup
 
 ## Status
-Draft
+✅ **Implemented** (June 11, 2026)
+
+## Implementation Details
+- **Files**: `src/js/auth.js`, `src/js/config.js`, `index.html`
+- Email/password login and registration with profile display name
+- Google and GitHub OAuth popup flows
+- Password reset email flow
+- Auth state listener with loading screen and 10s safety timeout
+- User-friendly Firebase error messages (`getAuthErrorMessage`)
+- Auth tab switching (login / register / reset)
+- Playwright coverage: `tests/story-1.1-auth-ui.spec.js`
 
 ## Story
 **As a** user,  

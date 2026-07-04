@@ -1,7 +1,16 @@
 # Story 1.2: Basic Board Display and Theme
 
 ## Status
-Draft
+✅ **Implemented** (June 11, 2026)
+
+## Implementation Details
+- **Files**: `index.html`, `styles.css`, `src/js/app.js`, `src/js/board.js`
+- Header with logo, project/board selectors, user avatar, theme toggle
+- Board container with gradient `--board-bg` from board settings
+- Theme toggle with `data-theme` on `<html>`, persisted to `flowboard-theme` in localStorage
+- System `prefers-color-scheme: dark` detected on first visit
+- Empty state when no board is selected
+- Playwright coverage: `tests/story-1.2-theme.spec.js`
 
 ## Story
 **As a** user,  

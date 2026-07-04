@@ -1,7 +1,7 @@
 # Story 5.1: File Attachments on Cards
 
 ## Status
-Draft
+Complete (June 11, 2026)
 
 ## Story
 **As a** user,  
@@ -18,24 +18,21 @@ Draft
 7. Image attachments show thumbnail preview
 
 ## Tasks / Subtasks
-- [ ] Task 1: Data Model & Storage Setup
-  - [ ] Configure Firebase Storage bucket and rules
-  - [ ] Update `Card` model to include `attachments` array (`{id, name, url, type, addedAt}`)
+- [x] Task 1: Data Model & Storage Setup
+  - [x] `storage.rules` for `attachments/{boardId}/{cardId}/{fileName}`
+  - [x] `attachments` array on Card (`{id, name, url, type, storagePath?, addedAt}`)
 
-- [ ] Task 2: Upload UI & Logic
-  - [ ] Add "Attachments" section to Card Modal
-  - [ ] Implement file input and upload handler
-  - [ ] Show upload progress indicator
-  - [ ] Save file metadata to card document on success
+- [x] Task 2: Upload UI & Logic
+  - [x] Attachments section in card modal with file input + upload button
+  - [x] Upload progress indicator
+  - [x] Guest mode: data-URL storage (≤500KB); Firebase Storage when configured
 
-- [ ] Task 3: Attachment Display
-  - [ ] Render list of attachments in modal
-  - [ ] Show thumbnail for image types; generic icon for others
-  - [ ] Implement "Delete" action (remove from Storage + Card doc)
+- [x] Task 3: Attachment Display
+  - [x] List with filename, image thumbnail or file icon, delete button
 
-- [ ] Task 4: Card View Indicator
-  - [ ] Show paperclip icon on card tile if attachments exist
+- [x] Task 4: Card View Indicator
+  - [x] Paperclip + count on card face (Story 5.3)
 
 ## Dev Notes
-- Ensure distinct path in Storage: `attachments/{boardId}/{cardId}/{filename}`
-- Validate file size/type if needed.
+- Firebase Storage SDK loaded via `firebase-storage-compat.js`.
+- Distinct path: `attachments/{boardId}/{cardId}/{filename}`.

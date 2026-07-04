@@ -1,7 +1,17 @@
 # Story 2.2: Project Management Screen
 
 ## Status
-Draft
+✅ **Implemented** (June 11, 2026)
+
+## Implementation Details
+- **Files**: `src/js/project.js`, `index.html`, `src/js/app.js`
+- Sidebar project list with create form
+- Detail panel with Backlog / Sprints / Team tabs
+- Editable project name and description via `updateProject()`
+- Toggle exit via Manage Projects button
+- Empty state when no project selected
+- Board selector filters by selected project; board creation requires a project
+- Playwright coverage: `tests/story-2.2-project-management.spec.js`
 
 ## Story
 **As a** user,  

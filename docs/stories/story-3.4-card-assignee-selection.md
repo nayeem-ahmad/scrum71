@@ -1,7 +1,7 @@
 # Story 3.4: Card Assignee Selection
 
 ## Status
-Draft
+Complete (June 11, 2026)
 
 ## Story
 **As a** user,  
@@ -17,19 +17,18 @@ Draft
 6. Only one assignee per card
 
 ## Tasks / Subtasks
-- [ ] Task 1: Card Data Model
-  - [ ] Add `assigneeId` field to Card schema
+- [x] Task 1: Card Data Model
+  - [x] `assigneeId` field on cards
 
-- [ ] Task 2: Card Modal UI - Assignee
-  - [ ] Add Assignee selector (dropdown or user list) to Card Modal
-  - [ ] Populate with Project Members
-  - [ ] Show current assignee with Avatar
+- [x] Task 2: Card Modal UI - Assignee
+  - [x] Assignee dropdown populated from project team (not board-only members)
+  - [x] Live assignee preview with avatar in card modal
 
-- [ ] Task 3: Card Board View UI
-  - [ ] Render Assignee Avatar (small) on Card tile in Board view
+- [x] Task 3: Card Board View UI
+  - [x] Assignee avatar on card face; "?" for unknown assignees
 
-- [ ] Task 4: Persistence
-  - [ ] Save `assigneeId` updates to Firestore
+- [x] Task 4: Persistence
+  - [x] `assigneeId` saved via `updateCard` / `saveState`
 
 ## Dev Notes
 - If assignee leaves project, handle graceful degradation (show "Unknown" or clear).
