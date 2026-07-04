@@ -10,7 +10,7 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-let auth, db;
+let auth, db, storage;
 let isFirebaseConfigured = false;
 
 try {
@@ -18,6 +18,9 @@ try {
         firebase.initializeApp(firebaseConfig);
         auth = firebase.auth();
         db = firebase.firestore();
+        if (typeof firebase.storage !== 'undefined') {
+            storage = firebase.storage();
+        }
         isFirebaseConfigured = true;
     } else {
         if (typeof firebase === 'undefined') {
@@ -31,4 +34,4 @@ try {
     console.error('Firebase initialization error:', error);
 }
 
-export { auth, db, isFirebaseConfigured };
+export { auth, db, storage, isFirebaseConfigured };

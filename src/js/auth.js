@@ -16,6 +16,28 @@ const loginForm = document.getElementById('loginForm');
 const registerForm = document.getElementById('registerForm');
 const resetForm = document.getElementById('resetForm');
 
+const AUTH_ERROR_MESSAGES = {
+    'auth/invalid-email': 'Please enter a valid email address.',
+    'auth/user-disabled': 'This account has been disabled.',
+    'auth/user-not-found': 'No account found with this email.',
+    'auth/wrong-password': 'Incorrect password. Please try again.',
+    'auth/invalid-credential': 'Invalid email or password.',
+    'auth/email-already-in-use': 'An account with this email already exists.',
+    'auth/weak-password': 'Password must be at least 6 characters.',
+    'auth/too-many-requests': 'Too many attempts. Please wait and try again.',
+    'auth/popup-closed-by-user': 'Sign-in popup was closed before completing.',
+    'auth/popup-blocked': 'Popup was blocked. Allow popups for this site and try again.',
+    'auth/network-request-failed': 'Network error. Check your connection and try again.',
+};
+
+const getAuthErrorMessage = (error) => {
+    if (!error) return 'Something went wrong. Please try again.';
+    if (error.code && AUTH_ERROR_MESSAGES[error.code]) {
+        return AUTH_ERROR_MESSAGES[error.code];
+    }
+    return error.message || 'Something went wrong. Please try again.';
+};
+
 // Helper function for form loading state
 const setFormLoading = (form, loading) => {
     const btn = form.querySelector('.btn-block');
@@ -94,16 +116,13 @@ export const initAuth = () => {
                 authScreen.classList.add('hidden');
                 headerElement.classList.remove('hidden');
                 boardContainer.classList.remove('hidden');
-                const bp = document.getElementById('burndownPanel');
-                if (bp) bp.style.display = '';
 
                 // Render
                 import('./app.js').then(module => {
-                    // We need to call initTheme and renderBoard. 
-                    // Since renderBoard is in board.js, we imported it.
-                    const { initTheme } = module;
+                    const { initTheme, handleCardDeepLink } = module;
                     if (initTheme) initTheme();
                     renderBoard();
+                    if (handleCardDeepLink) handleCardDeepLink();
                 });
 
                 if (state.boards.length === 0) {
@@ -121,8 +140,7 @@ export const initAuth = () => {
                 authScreen.classList.remove('hidden');
                 headerElement.classList.add('hidden');
                 boardContainer.classList.add('hidden');
-                const bp = document.getElementById('burndownPanel');
-                if (bp) bp.style.display = 'none';
+                document.getElementById('burndownPanel')?.classList.add('hidden');
             }
         });
     } else {
@@ -131,14 +149,14 @@ export const initAuth = () => {
         authScreen.classList.add('hidden');
         headerElement.classList.remove('hidden');
         boardContainer.classList.remove('hidden');
-        const bp = document.getElementById('burndownPanel');
-        if (bp) bp.style.display = '';
 
         loadState();
         import('./app.js').then(module => {
-            const { initTheme } = module;
+            const { initTheme, handleCardDeepLink } = module;
             if (initTheme) initTheme();
             renderBoard();
+            if (handleCardDeepLink) handleCardDeepLink();
+            window.dispatchEvent(new CustomEvent('checkInviteLink'));
         });
     }
 
@@ -239,7 +257,35 @@ const setupProfileListeners = () => {
     });
 };
 
+const showAuthForm = (formId) => {
+    ['loginForm', 'registerForm', 'resetForm'].forEach(id => {
+        document.getElementById(id)?.classList.toggle('hidden', id !== formId);
+    });
+};
+
 const setupAuthListeners = () => {
+    document.querySelectorAll('.auth-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const target = tab.dataset.tab;
+            document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            if (target === 'login') showAuthForm('loginForm');
+            if (target === 'register') showAuthForm('registerForm');
+        });
+    });
+
+    document.getElementById('forgotPasswordLink')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+        showAuthForm('resetForm');
+    });
+
+    document.getElementById('backToLoginLink')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.querySelector('.auth-tab[data-tab="login"]')?.classList.add('active');
+        showAuthForm('loginForm');
+    });
+
     // Login
     loginForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -258,7 +304,7 @@ const setupAuthListeners = () => {
             showToast('Welcome back!', 'success');
         } catch (error) {
             console.error('Login error:', error);
-            showToast('Failed to sign in', 'error');
+            showToast(getAuthErrorMessage(error), 'error');
         } finally {
             setFormLoading(loginForm, false);
         }
@@ -281,7 +327,7 @@ const setupAuthListeners = () => {
             showToast('Account created successfully!', 'success');
         } catch (error) {
             console.error('Registration error:', error);
-            showToast('Failed to create account', 'error');
+            showToast(getAuthErrorMessage(error), 'error');
         } finally {
             setFormLoading(registerForm, false);
         }
@@ -298,7 +344,7 @@ const setupAuthListeners = () => {
             showToast('Password reset email sent!', 'success');
             document.getElementById('backToLoginLink').click();
         } catch (error) {
-            showToast('Failed to send reset email', 'error');
+            showToast(getAuthErrorMessage(error), 'error');
         } finally {
             setFormLoading(resetForm, false);
         }
@@ -313,7 +359,7 @@ const setupAuthListeners = () => {
             showToast('Signed in with Google!', 'success');
         } catch (error) {
             console.error(error);
-            showToast('Failed to sign in with Google', 'error');
+            showToast(getAuthErrorMessage(error), 'error');
         }
     });
 
@@ -326,7 +372,7 @@ const setupAuthListeners = () => {
             showToast('Signed in with GitHub!', 'success');
         } catch (error) {
             console.error(error);
-            showToast('Failed to sign in with GitHub', 'error');
+            showToast(getAuthErrorMessage(error), 'error');
         }
     });
 

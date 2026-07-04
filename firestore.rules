@@ -1,20 +1,80 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can only read/write their own data
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // Allow access to boards for authenticated users
-    // In a real app, strict validation would span check membership
-    match /boards/{boardId} {
-      allow read, write: if request.auth != null;
+
+    function isAuthenticated() {
+      return request.auth != null;
     }
 
-    // Allow access to projects for authenticated users
+    function userEmail() {
+      return request.auth.token.email;
+    }
+
+    function isMember(memberEmails) {
+      return isAuthenticated()
+        && memberEmails != null
+        && userEmail() in memberEmails;
+    }
+
+    function isOwner(ownerId, owner) {
+      return isAuthenticated()
+        && (request.auth.uid == ownerId
+            || (owner != null && owner.email == userEmail()));
+    }
+
+    function canReadProject() {
+      return isMember(resource.data.memberEmails)
+        || isOwner(resource.data.ownerId, resource.data.owner);
+    }
+
+    function canReadBoard() {
+      return isMember(resource.data.memberEmails)
+        || isOwner(resource.data.ownerId, resource.data.owner);
+    }
+
+    // User profiles — users can only read/write their own
+    match /users/{userId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Projects — members can read/update; owner can delete
     match /projects/{projectId} {
-      allow read, write: if request.auth != null;
+      allow read: if isAuthenticated() && canReadProject();
+
+      allow create: if isAuthenticated()
+        && isMember(request.resource.data.memberEmails)
+        && request.resource.data.ownerId == request.auth.uid;
+
+      allow update: if isAuthenticated() && canReadProject();
+
+      allow delete: if isAuthenticated()
+        && isOwner(resource.data.ownerId, resource.data.owner);
+    }
+
+    // Boards (sprints) — members can read/write
+    match /boards/{boardId} {
+      allow read: if isAuthenticated() && canReadBoard();
+
+      allow create: if isAuthenticated()
+        && isMember(request.resource.data.memberEmails);
+
+      allow update: if isAuthenticated()
+        && isMember(resource.data.memberEmails);
+
+      allow delete: if isAuthenticated()
+        && (isOwner(resource.data.ownerId, resource.data.owner)
+            || isMember(resource.data.memberEmails));
+
+      // Subcollections used by card move operations
+      match /lists/{listId} {
+        allow read, write: if isAuthenticated()
+          && isMember(get(/databases/$(database)/documents/boards/$(boardId)).data.memberEmails);
+
+        match /cards/{cardId} {
+          allow read, write: if isAuthenticated()
+            && isMember(get(/databases/$(database)/documents/boards/$(boardId)).data.memberEmails);
+        }
+      }
     }
   }
 }

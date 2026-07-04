@@ -1,11 +1,119 @@
-import { state, getCurrentBoard, saveState, getCurrentUser, getOrCreateInviteToken, generateInviteToken } from './store.js';
-import { generateId, showToast } from './utils.js';
-import { renderBoard } from './board.js';
+import { state, getCurrentBoard, getActiveProject, saveState, getCurrentUser, getOrCreateInviteToken, generateInviteToken, createProject, updateProject, deleteProject, deleteCard } from './store.js';
+import { generateId, showToast, formatSprintDuration, getProjectTeamMembers, TEAM_ROLES, DEFAULT_PROJECT_LABELS, getProjectLabels } from './utils.js';
+import { renderBoard, updateBurndownPanelVisibility } from './board.js';
 import { db, isFirebaseConfigured } from './config.js';
 
 // ================================
 // INVITE LOGIC
 // ================================
+const resolveJoinIdentity = () => {
+    const currentUser = getCurrentUser();
+    if (currentUser?.email) {
+        return {
+            email: currentUser.email.toLowerCase(),
+            name: currentUser.displayName || currentUser.email.split('@')[0],
+            photoURL: currentUser.photoURL || null
+        };
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const joinAs = urlParams.get('joinAs')?.trim().toLowerCase();
+    if (joinAs) {
+        return { email: joinAs, name: joinAs.split('@')[0], photoURL: null };
+    }
+
+    const raw = localStorage.getItem('flowboard-guest-identity');
+    if (raw) {
+        try {
+            const parsed = JSON.parse(raw);
+            if (parsed?.email) return parsed;
+        } catch { /* ignore */ }
+    }
+
+    return { email: 'guest@local', name: 'Guest', photoURL: null };
+};
+
+/** @returns {'owner' | 'member' | 'added'} */
+const addMemberToEntity = (entity, identity) => {
+    const userEmail = identity.email.toLowerCase();
+    if (entity.owner?.email?.toLowerCase() === userEmail) return 'owner';
+    if (entity.members?.some(m => m.email?.toLowerCase() === userEmail)) return 'member';
+
+    if (!entity.members) entity.members = [];
+    entity.members.push({
+        id: generateId(),
+        name: identity.name || '',
+        email: identity.email,
+        photoURL: identity.photoURL || null,
+        role: TEAM_ROLES.MEMBER,
+        addedAt: new Date().toISOString()
+    });
+    if ('memberEmails' in entity || entity.owner) {
+        entity.memberEmails = [entity.owner?.email, ...(entity.members.map(m => m.email))].filter(Boolean);
+    }
+    return 'added';
+};
+
+const finishInviteJoin = (boardId, projectId) => {
+    state.currentBoardId = boardId;
+    if (projectId) state.currentProjectId = projectId;
+    renderBoard();
+    showToast('Joined successfully!', 'success');
+    window.history.replaceState({}, document.title, window.location.pathname);
+};
+
+const isAlreadyProjectMember = (project, identity) => {
+    if (!project) return false;
+    const email = identity.email.toLowerCase();
+    if (project.owner?.email?.toLowerCase() === email) return true;
+    return (project.members || []).some(m => m.email?.toLowerCase() === email);
+};
+
+const handleLocalInviteLink = (inviteToken, boardId) => {
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) {
+        showToast('Board not found', 'error');
+        return;
+    }
+    if (board.inviteToken !== inviteToken) {
+        showToast('Invalid or expired invite link', 'error');
+        return;
+    }
+
+    const identity = resolveJoinIdentity();
+    const project = board.projectId
+        ? state.projects.find(p => p.id === board.projectId)
+        : null;
+
+    if (isAlreadyProjectMember(project, identity)) {
+        showToast('You are already a member of this project', 'warning');
+        finishInviteJoin(boardId, board.projectId);
+        return;
+    }
+
+    let joinedAny = false;
+
+    if (addMemberToEntity(board, identity) === 'added') joinedAny = true;
+
+    if (project) {
+        if (addMemberToEntity(project, identity) === 'added') joinedAny = true;
+
+        state.boards
+            .filter(b => b.projectId === project.id && b.id !== board.id)
+            .forEach(otherBoard => {
+                if (addMemberToEntity(otherBoard, identity) === 'added') joinedAny = true;
+            });
+    }
+
+    if (joinedAny) {
+        saveState();
+        finishInviteJoin(boardId, board.projectId);
+        return;
+    }
+
+    showToast('Unable to join project', 'error');
+};
+
 export const handleInviteLink = async () => {
     const urlParams = new URLSearchParams(window.location.search);
     const inviteToken = urlParams.get('invite');
@@ -13,9 +121,13 @@ export const handleInviteLink = async () => {
 
     if (!inviteToken || !boardId) return;
 
+    if (!isFirebaseConfigured || !getCurrentUser()) {
+        handleLocalInviteLink(inviteToken, boardId);
+        return;
+    }
+
     try {
-        const currentUser = getCurrentUser();
-        if (!currentUser) return;
+        const identity = resolveJoinIdentity();
 
         const doc = await db.collection('boards').doc(boardId).get();
         if (!doc.exists) {
@@ -29,65 +141,54 @@ export const handleInviteLink = async () => {
             return;
         }
 
-        let joinedAny = false;
-        const addUserToEntity = (entity) => {
-            const userEmail = currentUser.email;
-            if (entity.owner?.email === userEmail) return false;
-            if (entity.members?.some(m => m.email === userEmail)) return false;
-
-            if (!entity.members) entity.members = [];
-            entity.members.push({
-                id: generateId(),
-                name: currentUser.displayName || '',
-                email: currentUser.email,
-                photoURL: currentUser.photoURL || null,
-                role: 'member',
-                addedAt: new Date().toISOString()
-            });
-            entity.memberEmails = [entity.owner?.email, ...(entity.members.map(m => m.email))].filter(Boolean);
-            return true;
-        };
-
-        if (addUserToEntity(board)) {
-            await db.collection('boards').doc(board.id).set(board, { merge: true });
-            joinedAny = true;
-        }
-
+        let project = null;
         if (board.projectId) {
             const pDoc = await db.collection('projects').doc(board.projectId).get();
-            if (pDoc.exists) {
-                const project = pDoc.data();
-                if (addUserToEntity(project)) {
-                    await db.collection('projects').doc(project.id).set(project, { merge: true });
-                    joinedAny = true;
-                }
-                // Join other boards
-                const boardsSnap = await db.collection('boards').where('projectId', '==', board.projectId).get();
-                const batch = db.batch();
-                boardsSnap.forEach(bDoc => {
-                    if (bDoc.id === board.id) return;
-                    const bData = bDoc.data();
-                    if (addUserToEntity(bData)) batch.set(bDoc.ref, bData, { merge: true });
-                });
-                await batch.commit();
+            if (pDoc.exists) project = pDoc.data();
+        }
+
+        if (isAlreadyProjectMember(project, identity)) {
+            showToast('You are already a member of this project', 'warning');
+            finishInviteJoin(boardId, board.projectId);
+            return;
+        }
+
+        let joinedAny = false;
+
+        if (addMemberToEntity(board, identity) === 'added') {
+            joinedAny = true;
+            await db.collection('boards').doc(board.id).set(board, { merge: true });
+        }
+
+        if (project) {
+            if (addMemberToEntity(project, identity) === 'added') {
+                joinedAny = true;
+                await db.collection('projects').doc(project.id).set(project, { merge: true });
             }
+
+            const boardsSnap = await db.collection('boards').where('projectId', '==', board.projectId).get();
+            const batch = db.batch();
+            boardsSnap.forEach(bDoc => {
+                if (bDoc.id === board.id) return;
+                const bData = bDoc.data();
+                if (addMemberToEntity(bData, identity) === 'added') {
+                    joinedAny = true;
+                    batch.set(bDoc.ref, bData, { merge: true });
+                }
+            });
+            await batch.commit();
         }
 
         if (joinedAny) {
-            showToast('Joined successfully!', 'success');
-            state.currentBoardId = boardId;
-            if (board.projectId) state.currentProjectId = board.projectId;
-            // Reload state? Simplest is to force reload or re-query.
-            // But we are in module. app.js will render after auth.
-            // If already loaded, we might need to refresh.
-            // For now assume reloadState is handled or user manual refresh.
-            // Actually loadState should be called.
-            // import loadState? circular dep likely.
+            await saveState();
+            finishInviteJoin(boardId, board.projectId);
+            return;
         }
 
         window.history.replaceState({}, document.title, window.location.pathname);
     } catch (error) {
         console.error('Error joining:', error);
+        showToast('Failed to join project', 'error');
     }
 };
 
@@ -98,67 +199,139 @@ window.addEventListener('checkInviteLink', handleInviteLink);
 // ================================
 const projectInfoModal = document.getElementById('projectInfoModal');
 
+const renderMemberRoleBadge = (role) => {
+    if (role === TEAM_ROLES.OWNER) return '<span class="role-badge owner">owner</span>';
+    if (role === TEAM_ROLES.ADMIN) return '<span class="role-badge admin">admin</span>';
+    return '<span class="role-badge member">member</span>';
+};
+
+const getCurrentActorEmail = () => {
+    const user = getCurrentUser();
+    if (user?.email) return user.email.toLowerCase();
+    const raw = localStorage.getItem('flowboard-guest-identity');
+    if (raw) {
+        try {
+            const parsed = JSON.parse(raw);
+            if (parsed?.email) return parsed.email.toLowerCase();
+        } catch { /* ignore */ }
+    }
+    const project = getActiveProject();
+    return project?.owner?.email?.toLowerCase() || null;
+};
+
+const canManageProjectTeam = (project) => {
+    if (!project) return false;
+    const email = getCurrentActorEmail();
+    if (!email) return true;
+    if (project.owner?.email?.toLowerCase() === email) return true;
+    const member = (project.members || []).find(m => m.email?.toLowerCase() === email);
+    return member?.role === TEAM_ROLES.ADMIN;
+};
+
+const canRemoveTeamMember = (project, member) => {
+    if (!project || !member || member.role === TEAM_ROLES.OWNER) return false;
+    return canManageProjectTeam(project);
+};
+
+const clearAssigneeFromProjectCards = (project, memberId) => {
+    const boardIds = new Set([
+        ...(project.sprintIds || []),
+        ...state.boards.filter(b => b.projectId === project.id).map(b => b.id),
+    ]);
+    for (const boardId of boardIds) {
+        const board = state.boards.find(b => b.id === boardId);
+        if (!board) continue;
+        for (const list of board.lists || []) {
+            for (const card of list.cards || []) {
+                if (card.assigneeId === memberId) card.assigneeId = null;
+            }
+        }
+    }
+};
+
+const persistProjectTeam = async (project) => {
+    if (!project?.id) return;
+    try {
+        await updateProject(project.id, { members: project.members || [] });
+    } catch (error) {
+        console.error('Error saving project team:', error);
+        showToast('Failed to save team changes', 'error');
+        throw error;
+    }
+};
+
 export const openProjectInfoModal = () => {
     const board = getCurrentBoard();
+    const project = getActiveProject();
     if (!board || !projectInfoModal) return;
 
     document.getElementById('projectColorPreview').style.background = board.background;
-    document.getElementById('projectName').textContent = board.name;
+    document.getElementById('projectName').textContent = project?.name || board.name;
 
     const listCount = board.lists?.length || 0;
     const cardCount = board.lists?.reduce((sum, list) => sum + (list.cards?.length || 0), 0) || 0;
     document.getElementById('projectStats').textContent = `${listCount} list${listCount !== 1 ? 's' : ''} • ${cardCount} card${cardCount !== 1 ? 's' : ''}`;
 
-    const owner = board.owner || { name: 'You', email: 'you@example.com' };
+    const owner = project?.owner || board.owner || { name: 'You', email: 'you@example.com' };
     const ownerAvatarEl = document.getElementById('projectOwnerAvatar');
     const ownerNameEl = document.getElementById('projectOwnerName');
 
     if (owner.photoURL) {
-        ownerAvatarEl.innerHTML = `<img src="${owner.photoURL}" alt="${owner.name}">`;
+        ownerAvatarEl.innerHTML = `<img src="${esc(owner.photoURL)}" alt="${esc(owner.name)}">`;
     } else {
-        ownerAvatarEl.innerHTML = (owner.name || 'U').charAt(0).toUpperCase();
+        ownerAvatarEl.textContent = (owner.name || 'U').charAt(0).toUpperCase();
     }
-    ownerNameEl.textContent = owner.name;
+    ownerNameEl.textContent = owner.name || 'Owner';
 
-    renderTeamMembers();
+    renderTeamMembers(project);
     updateInviteLinkInput();
+    const regenBtn = document.getElementById('regenerateLinkBtn');
+    if (regenBtn) regenBtn.style.display = canManageProjectTeam(project) ? '' : 'none';
     projectInfoModal.classList.add('active');
 };
 
-const renderTeamMembers = () => {
-    const board = getCurrentBoard();
-    if (!board) return;
+const renderTeamMembers = (project) => {
+    if (!project) return;
 
-    const members = board.members || [];
+    const allMembers = getProjectTeamMembers(project);
     const list = document.getElementById('teamMembersList');
     const count = document.getElementById('teamCount');
-    if (count) count.textContent = members.length;
+    const canManage = canManageProjectTeam(project);
+    if (count) count.textContent = String(allMembers.length);
 
-    if (members.length === 0) {
+    if (!allMembers.length) {
         list.innerHTML = '<div class="team-empty-state"><p>No team members yet.</p></div>';
         return;
     }
 
-    list.innerHTML = members.map(m => `
-        <div class="team-member-item" data-id="${m.id}">
-             <div class="member-avatar">${m.photoURL ? `<img src="${m.photoURL}">` : (m.name?.[0] || 'U')}</div>
+    list.innerHTML = allMembers.map(m => `
+        <div class="team-member-item" data-id="${esc(m.id)}">
+             <div class="member-avatar">${m.photoURL ? `<img src="${esc(m.photoURL)}" alt="${esc(m.name || 'U')}">` : esc((m.name || m.email || 'U').charAt(0).toUpperCase())}</div>
              <div class="member-info">
-                 <div class="member-name">${m.name || 'User'}</div>
-                 <div class="member-email">${m.email}</div>
+                 <div class="member-name">${esc(m.name || 'User')} ${renderMemberRoleBadge(m.role)}</div>
+                 <div class="member-email">${esc(m.email || '')}</div>
              </div>
-             <button class="member-action-btn danger remove-member-btn" data-id="${m.id}">
+             ${canRemoveTeamMember(project, m) ? `
+             <button class="member-action-btn danger remove-member-btn" data-id="${esc(m.id)}" title="Remove member">
                  <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-             </button>
+             </button>` : ''}
         </div>
     `).join('');
 
     list.querySelectorAll('.remove-member-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             const mid = btn.dataset.id;
-            if (confirm('Remove member?')) {
-                board.members = board.members.filter(m => m.id !== mid);
-                saveState();
-                renderTeamMembers();
+            const member = (project.members || []).find(m => m.id === mid);
+            if (!member || !confirm(`Remove ${member.name || member.email} from the project?`)) return;
+            project.members = (project.members || []).filter(m => m.id !== mid);
+            clearAssigneeFromProjectCards(project, mid);
+            try {
+                await persistProjectTeam(project);
+                renderTeamMembers(project);
+                renderBoard();
+                showToast('Member removed', 'success');
+            } catch {
+                project.members.push(member);
             }
         });
     });
@@ -193,7 +366,12 @@ document.getElementById('copyInviteLinkBtn')?.addEventListener('click', async ()
 
 document.getElementById('regenerateLinkBtn')?.addEventListener('click', () => {
     const board = getCurrentBoard();
-    if (board && confirm('Regenerate link? Old one will fail.')) {
+    const project = getActiveProject();
+    if (!board || !canManageProjectTeam(project)) {
+        showToast('Only owners and admins can regenerate invite links', 'warning');
+        return;
+    }
+    if (confirm('Regenerate link? Old one will fail.')) {
         board.inviteToken = generateInviteToken();
         saveState();
         updateInviteLinkInput();
@@ -208,6 +386,31 @@ document.getElementById('regenerateLinkBtn')?.addEventListener('click', () => {
 const projectManagementScreen = document.getElementById('projectManagementScreen');
 const boardContainer = document.getElementById('boardContainer');
 const manageProjectsBtn = document.getElementById('manageProjectsBtn');
+const pmSidebar = document.getElementById('pmSidebar');
+const pmSidebarBackdrop = document.getElementById('pmSidebarBackdrop');
+
+const isMobileLayout = () => window.matchMedia('(max-width: 768px)').matches;
+
+export const closePmSidebar = () => {
+    pmSidebar?.classList.remove('open');
+    pmSidebarBackdrop?.classList.remove('active');
+    pmSidebarBackdrop?.setAttribute('aria-hidden', 'true');
+};
+
+const openPmSidebar = () => {
+    pmSidebar?.classList.add('open');
+    pmSidebarBackdrop?.classList.add('active');
+    pmSidebarBackdrop?.setAttribute('aria-hidden', 'false');
+};
+
+document.getElementById('pmSidebarToggle')?.addEventListener('click', openPmSidebar);
+pmSidebarBackdrop?.addEventListener('click', closePmSidebar);
+
+document.getElementById('pmBackToBoardBtn')?.addEventListener('click', () => {
+    if (projectManagementScreen && !projectManagementScreen.classList.contains('hidden')) {
+        manageProjectsBtn?.click();
+    }
+});
 
 if (manageProjectsBtn) {
     manageProjectsBtn.addEventListener('click', () => {
@@ -216,15 +419,14 @@ if (manageProjectsBtn) {
             projectManagementScreen.classList.remove('hidden');
             boardContainer.classList.add('hidden');
             manageProjectsBtn.classList.add('active');
-            const bp = document.getElementById('burndownPanel');
-            if (bp) bp.style.display = 'none';
+            updateBurndownPanelVisibility(getCurrentBoard());
             renderProjectManagement();
         } else {
             projectManagementScreen.classList.add('hidden');
             boardContainer.classList.remove('hidden');
             manageProjectsBtn.classList.remove('active');
-            const bp = document.getElementById('burndownPanel');
-            if (bp) bp.style.display = '';
+            closePmSidebar();
+            renderBoard();
         }
     });
 }
@@ -232,39 +434,123 @@ if (manageProjectsBtn) {
 // Escape HTML helper for project.js
 const esc = (str) => { const d = document.createElement('div'); d.textContent = str == null ? '' : String(str); return d.innerHTML; };
 
+const formatBacklogDate = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const getBacklogItemDate = (item) => item.addedAt || item.createdAt || '';
+
+const persistProjectBacklog = async (project) => {
+    if (!project?.id) return;
+    try {
+        await updateProject(project.id, { backlog: project.backlog || [] });
+    } catch (error) {
+        console.error('Error saving backlog:', error);
+        showToast('Failed to save backlog', 'error');
+        throw error;
+    }
+};
+
 // --------------------------------
 // Backlog item → sprint (sprint picker logic)
 // --------------------------------
 let _pendingBacklogTaskId = null;
 
-const moveBacklogItemToSprint = (project, taskId, targetSprintId) => {
+const findCardListInSprint = (sprint, cardId) => {
+    if (!sprint?.lists || !cardId) return null;
+    for (const list of sprint.lists) {
+        if ((list.cards || []).some(c => c.id === cardId)) return list;
+    }
+    return null;
+};
+
+const createCardFromBacklogItem = (task, taskId) => ({
+    id: generateId(),
+    title: task.title,
+    description: task.description || '',
+    labels: [],
+    checklist: [],
+    comments: [],
+    remainingHoursLog: [],
+    spentHoursLog: [],
+    attachments: [],
+    initialEstimate: 0,
+    assigneeId: null,
+    linkedStoryId: (task.type === 'task' && task.linkedStoryId) ? task.linkedStoryId : null,
+    linkedTaskId: taskId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+});
+
+export const unlinkBacklogFromCard = async (card, board) => {
+    if (!card?.linkedTaskId || !board?.projectId) return;
+    const project = state.projects.find(p => p.id === board.projectId);
+    if (!project) return;
+    const task = (project.backlog || []).find(t => t.id === card.linkedTaskId);
+    if (!task || task.status !== 'in-sprint') return;
+    task.status = 'open';
+    delete task.sprintId;
+    delete task.cardId;
+    await updateProject(project.id, { backlog: project.backlog });
+};
+
+const moveBacklogItemToSprint = async (project, taskId, targetSprintId) => {
     const taskIdx = project.backlog.findIndex(t => t.id === taskId);
     if (taskIdx === -1) return;
     const task = project.backlog[taskIdx];
+    if (task.status === 'in-sprint') {
+        showToast('Already in a sprint. Remove it first to reassign.', 'warning');
+        return;
+    }
     const sprint = state.boards.find(b => b.id === targetSprintId);
     if (!sprint) { showToast('Sprint not found', 'error'); return; }
+    if (sprint.projectId && sprint.projectId !== project.id) {
+        showToast('Sprint does not belong to this project', 'error');
+        return;
+    }
     if (!sprint.lists.length) sprint.lists.push({ id: generateId(), title: 'To Do', cards: [] });
-    const cardId = generateId();
-    sprint.lists[0].cards.push({
-        id: cardId,
-        title: task.title,
-        description: task.description || '',
-        labels: [],
-        checklist: [],
-        remainingHoursLog: [],
-        initialEstimate: 0,
-        assigneeId: null,
-        linkedStoryId: (task.type === 'task' && task.linkedStoryId) ? task.linkedStoryId : null,
-        linkedTaskId: taskId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-    });
+    const newCard = createCardFromBacklogItem(task, taskId);
+    sprint.lists[0].cards.push(newCard);
     task.status = 'in-sprint';
     task.sprintId = sprint.id;
-    task.cardId = cardId;
-    saveState();
+    task.cardId = newCard.id;
+    await persistProjectBacklog(project);
     renderBacklog(project);
+    if (state.currentBoardId === sprint.id) renderBoard();
     showToast(`Added to "${sprint.name}"`, 'success');
+};
+
+const removeBacklogItemFromSprint = async (project, taskId) => {
+    const task = (project.backlog || []).find(t => t.id === taskId);
+    if (!task || task.status !== 'in-sprint') return;
+
+    const sprintId = task.sprintId;
+    const sprint = state.boards.find(b => b.id === sprintId);
+
+    if (sprint && task.cardId) {
+        const list = findCardListInSprint(sprint, task.cardId);
+        if (list) {
+            try {
+                await deleteCard(sprint.id, list.id, task.cardId);
+                list.cards = (list.cards || []).filter(c => c.id !== task.cardId);
+            } catch (error) {
+                console.error('Error removing sprint card:', error);
+                showToast('Failed to remove card from sprint', 'error');
+                return;
+            }
+        }
+    }
+
+    task.status = 'open';
+    delete task.sprintId;
+    delete task.cardId;
+    await persistProjectBacklog(project);
+    renderBacklog(project);
+    if (state.currentBoardId === sprintId) renderBoard();
+    showToast('Removed from sprint (still in backlog)', 'success');
 };
 
 // Sprint picker modal listeners
@@ -300,8 +586,12 @@ export const renderProjectManagement = () => {
     listEl.querySelectorAll('.pm-project-item').forEach(item => {
         item.addEventListener('click', () => {
             state.currentProjectId = item.dataset.id;
+            const boards = state.boards.filter(b => b.projectId === state.currentProjectId);
+            state.currentBoardId = boards.length ? boards[0].id : null;
             saveState();
             renderProjectManagement();
+            renderBoard();
+            if (isMobileLayout()) closePmSidebar();
         });
     });
 
@@ -369,7 +659,160 @@ const renderProjectTab = (tabName) => {
     if (tabName === 'sprints') renderSprints(project);
     else if (tabName === 'backlog') renderBacklog(project);
     else if (tabName === 'team') renderTeam(project);
+    else if (tabName === 'labels') renderLabels(project);
 };
+
+const persistProjectLabels = async (project) => {
+    if (!project?.id) return;
+    try {
+        await updateProject(project.id, { labels: project.labels || [] });
+    } catch (error) {
+        console.error('Error saving labels:', error);
+        showToast('Failed to save labels', 'error');
+        throw error;
+    }
+};
+
+const renderLabels = (project) => {
+    const listEl = document.getElementById('pmLabelsList');
+    if (!listEl) return;
+
+    if (!project.labels?.length) {
+        project.labels = DEFAULT_PROJECT_LABELS.map(l => ({ ...l }));
+    }
+
+    const canManage = canManageProjectTeam(project);
+    listEl.innerHTML = getProjectLabels(project).map(label => `
+        <div class="pm-label-item" data-id="${esc(label.id)}">
+            <div class="pm-label-view">
+                <span class="pm-label-swatch" style="background:${esc(label.color)}" title="${esc(label.name)}"></span>
+                <span class="pm-label-name">${esc(label.name)}</span>
+                <span class="pm-label-id">${esc(label.id)}</span>
+                ${canManage ? `
+                    <button type="button" class="btn btn-sm btn-secondary pm-label-edit" data-id="${esc(label.id)}" title="Edit label">Edit</button>
+                    <button type="button" class="btn btn-sm btn-secondary pm-label-delete" data-id="${esc(label.id)}" title="Delete label">Delete</button>
+                ` : ''}
+            </div>
+            <div class="pm-label-edit-form hidden">
+                <input type="text" class="pm-label-edit-name" value="${esc(label.name)}" maxlength="40" aria-label="Label name">
+                <input type="color" class="pm-label-edit-color" value="${esc(label.color)}" aria-label="Label color">
+                <button type="button" class="btn btn-sm btn-primary pm-label-save-edit">Save</button>
+                <button type="button" class="btn btn-sm btn-secondary pm-label-cancel-edit">Cancel</button>
+            </div>
+        </div>
+    `).join('') || '<div class="pm-empty-hint">No labels configured.</div>';
+
+    listEl.querySelectorAll('.pm-label-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const item = btn.closest('.pm-label-item');
+            if (!item) return;
+            item.querySelector('.pm-label-view')?.classList.add('hidden');
+            item.querySelector('.pm-label-edit-form')?.classList.remove('hidden');
+            item.querySelector('.pm-label-edit-name')?.focus();
+        });
+    });
+
+    listEl.querySelectorAll('.pm-label-cancel-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const item = btn.closest('.pm-label-item');
+            if (!item) return;
+            const labelId = item.dataset.id;
+            const label = project.labels.find(l => l.id === labelId);
+            if (label) {
+                item.querySelector('.pm-label-edit-name').value = label.name;
+                item.querySelector('.pm-label-edit-color').value = label.color;
+            }
+            item.querySelector('.pm-label-edit-form')?.classList.add('hidden');
+            item.querySelector('.pm-label-view')?.classList.remove('hidden');
+        });
+    });
+
+    listEl.querySelectorAll('.pm-label-save-edit').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const item = btn.closest('.pm-label-item');
+            if (!item) return;
+            const labelId = item.dataset.id;
+            const label = project.labels.find(l => l.id === labelId);
+            if (!label) return;
+
+            const name = item.querySelector('.pm-label-edit-name')?.value.trim();
+            const color = item.querySelector('.pm-label-edit-color')?.value || label.color;
+            if (!name) {
+                showToast('Enter a label name', 'error');
+                return;
+            }
+
+            const prev = { name: label.name, color: label.color };
+            label.name = name;
+            label.color = color;
+            try {
+                await persistProjectLabels(project);
+                renderLabels(project);
+                showToast('Label updated', 'success');
+            } catch {
+                label.name = prev.name;
+                label.color = prev.color;
+            }
+        });
+    });
+
+    listEl.querySelectorAll('.pm-label-delete').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const labelId = btn.dataset.id;
+            const label = project.labels.find(l => l.id === labelId);
+            if (!label || !confirm(`Delete label "${label.name}"?`)) return;
+            project.labels = project.labels.filter(l => l.id !== labelId);
+            try {
+                await persistProjectLabels(project);
+                renderLabels(project);
+                showToast('Label deleted', 'success');
+            } catch {
+                project.labels.push(label);
+            }
+        });
+    });
+};
+
+document.getElementById('pmAddLabelBtn')?.addEventListener('click', () => {
+    document.getElementById('pmAddLabelForm')?.classList.remove('hidden');
+    document.getElementById('pmLabelNameInput')?.focus();
+});
+
+document.getElementById('pmCancelLabelBtn')?.addEventListener('click', () => {
+    document.getElementById('pmAddLabelForm')?.classList.add('hidden');
+    document.getElementById('pmLabelNameInput').value = '';
+});
+
+document.getElementById('pmSaveLabelBtn')?.addEventListener('click', async () => {
+    const project = state.projects.find(p => p.id === state.currentProjectId);
+    if (!project) return;
+    if (!canManageProjectTeam(project)) {
+        showToast('Only owners and admins can manage labels', 'warning');
+        return;
+    }
+    const name = document.getElementById('pmLabelNameInput')?.value.trim();
+    const color = document.getElementById('pmLabelColorInput')?.value || '#6366f1';
+    if (!name) {
+        showToast('Enter a label name', 'error');
+        return;
+    }
+    if (!project.labels) project.labels = [];
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || generateId();
+    if (project.labels.some(l => l.id === id)) {
+        showToast('A label with that id already exists', 'warning');
+        return;
+    }
+    project.labels.push({ id, name, color });
+    try {
+        await persistProjectLabels(project);
+        renderLabels(project);
+        document.getElementById('pmAddLabelForm')?.classList.add('hidden');
+        document.getElementById('pmLabelNameInput').value = '';
+        showToast('Label added', 'success');
+    } catch {
+        project.labels.pop();
+    }
+});
 
 // --------------------------------
 // Sprints tab
@@ -389,7 +832,11 @@ const renderSprints = (project) => {
     listEl.innerHTML = sprints.map(s => {
         const cardCount = (s.lists || []).reduce((acc, l) => acc + (l.cards || []).length, 0);
         const isActive = s.id === state.currentBoardId;
-        const dates = (s.startDate || s.endDate) ? `<div class="pm-sprint-dates">${fmt(s.startDate)}${s.endDate ? ' – ' + fmt(s.endDate) : ''}</div>` : '';
+        const duration = formatSprintDuration(s.startDate, s.endDate);
+        const durationSuffix = duration ? ` · ${duration}` : '';
+        const dates = (s.startDate || s.endDate)
+            ? `<div class="pm-sprint-dates">${fmt(s.startDate)}${s.endDate ? ' – ' + fmt(s.endDate) : ''}${durationSuffix}</div>`
+            : '';
         const goal = s.goal ? `<div class="pm-sprint-goal">${esc(s.goal)}</div>` : '';
         return `
             <div class="pm-sprint-item ${isActive ? 'active-sprint' : ''}" data-id="${s.id}" style="cursor:pointer">
@@ -417,8 +864,7 @@ const renderSprints = (project) => {
             projectManagementScreen.classList.add('hidden');
             boardContainer.classList.remove('hidden');
             manageProjectsBtn?.classList.remove('active');
-            const bp = document.getElementById('burndownPanel');
-            if (bp) bp.style.display = '';
+            updateBurndownPanelVisibility(getCurrentBoard());
         });
     });
 
@@ -431,6 +877,9 @@ const renderSprints = (project) => {
             document.getElementById('sprintEditGoal').value = sprint.goal || '';
             document.getElementById('sprintEditStart').value = sprint.startDate || '';
             document.getElementById('sprintEditEnd').value = sprint.endDate || '';
+            const duration = formatSprintDuration(sprint.startDate, sprint.endDate);
+            const hint = document.getElementById('sprintEditDuration');
+            if (hint) hint.textContent = duration ? `Sprint duration: ${duration}` : '';
             const modal = document.getElementById('sprintEditModal');
             if (modal) { modal.dataset.sprintId = sprint.id; modal.classList.add('active'); }
         });
@@ -468,11 +917,16 @@ const addTaskToStory = (project, storyId, input) => {
         status: 'open',
         addedAt: new Date().toISOString()
     });
-    saveState();
+    persistProjectBacklog(project);
     renderBacklog(project);
 };
 
 const openSprintPickerFor = (project, taskId) => {
+    const task = (project.backlog || []).find(t => t.id === taskId);
+    if (task?.status === 'in-sprint') {
+        showToast('Already in a sprint. Remove it first to reassign.', 'warning');
+        return;
+    }
     const sprints = state.boards.filter(b => b.projectId === project.id);
     if (!sprints.length) { showToast('No sprints. Create a sprint first.', 'warning'); return; }
     if (sprints.length === 1) {
@@ -504,7 +958,9 @@ const renderBacklog = (project) => {
     if (!listEl) return;
     const items = project.backlog || [];
 
-    const stories = items.filter(i => i.type === 'story');
+    const stories = items
+        .filter(i => i.type === 'story')
+        .sort((a, b) => new Date(getBacklogItemDate(b)) - new Date(getBacklogItemDate(a)));
     const tasks = items.filter(i => i.type === 'task');
     const legacyItems = items.filter(i => !i.type);
 
@@ -526,21 +982,32 @@ const renderBacklog = (project) => {
 
     const renderTaskHtml = (task) => {
         const sprint = task.sprintId ? state.boards.find(b => b.id === task.sprintId) : null;
-        const badge = sprint ? `<span class="backlog-sprint-badge" title="In sprint: ${esc(sprint.name)}">${esc(sprint.name)}</span>` : '';
+        const inSprint = task.status === 'in-sprint';
+        const badge = sprint
+            ? `<span class="backlog-sprint-badge" title="In sprint: ${esc(sprint.name)}">In ${esc(sprint.name)}</span>`
+            : '';
+        const dateStr = formatBacklogDate(getBacklogItemDate(task));
+        const dateHtml = dateStr ? `<span class="backlog-date" title="Created ${esc(dateStr)}">${esc(dateStr)}</span>` : '';
+        const sprintActionBtn = inSprint
+            ? `<button class="btn-icon remove-sprint-btn" data-id="${esc(task.id)}" title="Remove from sprint (keeps in backlog)">
+                <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M9 14l-4-4M5 10l4-4M5 10h11a4 4 0 014 4v0a4 4 0 01-4 4H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+               </button>`
+            : `<button class="btn-icon move-sprint-btn" data-id="${esc(task.id)}" title="Add to Sprint">
+                <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+               </button>`;
         return `
-        <div class="backlog-task ${task.status === 'in-sprint' ? 'in-sprint' : ''}" data-id="${esc(task.id)}">
+        <div class="backlog-task ${inSprint ? 'in-sprint' : ''}" data-id="${esc(task.id)}">
             <span class="task-icon">
                 <svg viewBox="0 0 24 24" fill="none" width="12" height="12"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </span>
             <div class="task-title-wrap">
                 <span class="task-title">${esc(task.title)}</span>
                 <input type="text" class="form-input task-title-edit-input hidden" value="${esc(task.title)}">
+                ${dateHtml}
                 ${badge}
             </div>
             <div class="task-actions">
-                <button class="btn-icon move-sprint-btn" data-id="${esc(task.id)}" title="Move to Sprint">
-                    <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                ${sprintActionBtn}
                 <button class="btn-icon danger delete-task-btn" data-id="${esc(task.id)}" title="Delete Task">
                     <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
@@ -556,6 +1023,8 @@ const renderBacklog = (project) => {
         const progressText = total > 0
             ? `${done}/${total} in sprint`
             : 'No tasks yet';
+        const storyDate = formatBacklogDate(getBacklogItemDate(story));
+        const storyDateHtml = storyDate ? `<span class="backlog-date" title="Created ${esc(storyDate)}">${esc(storyDate)}</span>` : '';
         return `
         <div class="story-group" data-id="${esc(story.id)}">
             <div class="story-header">
@@ -568,6 +1037,7 @@ const renderBacklog = (project) => {
                 <div class="story-title-wrap">
                     <span class="story-title">${esc(story.title)}</span>
                     <input type="text" class="form-input story-title-edit-input hidden" value="${esc(story.title)}">
+                    ${storyDateHtml}
                 </div>
                 <span class="story-progress ${allDone ? 'all-done' : ''}">${progressText}</span>
                 <div class="story-actions">
@@ -603,7 +1073,7 @@ const renderBacklog = (project) => {
             const story = (project.backlog || []).find(s => s.id === btn.dataset.id);
             if (story) {
                 story.collapsed = !story.collapsed;
-                saveState();
+                persistProjectBacklog(project);
                 renderBacklog(project);
             }
         });
@@ -626,7 +1096,11 @@ const renderBacklog = (project) => {
             const newTitle = input.value.trim();
             if (newTitle && storyId) {
                 const story = (project.backlog || []).find(s => s.id === storyId);
-                if (story) { story.title = newTitle; saveState(); }
+                if (story) {
+                    story.title = newTitle;
+                    persistProjectBacklog(project);
+                    input.previousElementSibling.textContent = newTitle;
+                }
             }
             input.classList.add('hidden');
             input.previousElementSibling.classList.remove('hidden');
@@ -654,7 +1128,7 @@ const renderBacklog = (project) => {
                 : `Delete story "${story.title}"?`;
             if (!confirm(msg)) return;
             project.backlog = (project.backlog || []).filter(i => i.id !== storyId && !(i.type === 'task' && i.linkedStoryId === storyId));
-            saveState();
+            persistProjectBacklog(project);
             renderBacklog(project);
         });
     });
@@ -689,7 +1163,11 @@ const renderBacklog = (project) => {
             const newTitle = input.value.trim();
             if (newTitle && taskId) {
                 const task = (project.backlog || []).find(t => t.id === taskId);
-                if (task) { task.title = newTitle; saveState(); }
+                if (task) {
+                    task.title = newTitle;
+                    persistProjectBacklog(project);
+                    input.previousElementSibling.textContent = newTitle;
+                }
             }
             input.classList.add('hidden');
             input.previousElementSibling.classList.remove('hidden');
@@ -712,7 +1190,7 @@ const renderBacklog = (project) => {
             const task = (project.backlog || []).find(t => t.id === taskId);
             if (!task || !confirm(`Delete task "${task.title}"?`)) return;
             project.backlog = (project.backlog || []).filter(t => t.id !== taskId);
-            saveState();
+            persistProjectBacklog(project);
             renderBacklog(project);
         });
     });
@@ -720,6 +1198,11 @@ const renderBacklog = (project) => {
     // Move task to sprint
     listEl.querySelectorAll('.move-sprint-btn').forEach(btn => {
         btn.addEventListener('click', () => openSprintPickerFor(project, btn.dataset.id));
+    });
+
+    // Remove task from sprint (keeps backlog item)
+    listEl.querySelectorAll('.remove-sprint-btn').forEach(btn => {
+        btn.addEventListener('click', () => removeBacklogItemFromSprint(project, btn.dataset.id));
     });
 };
 
@@ -731,7 +1214,7 @@ const addToBacklog = () => {
         const project = state.projects.find(p => p.id === state.currentProjectId);
         if (!project.backlog) project.backlog = [];
         project.backlog.push({ id: generateId(), type: 'story', title: val, status: 'open', addedAt: new Date().toISOString() });
-        saveState();
+        persistProjectBacklog(project);
         renderBacklog(project);
         input.value = '';
     }
@@ -748,29 +1231,29 @@ document.getElementById('backlogInput')?.addEventListener('keydown', (e) => {
 const renderTeam = (project) => {
     const listEl = document.getElementById('pmTeamList');
     if (!listEl) return;
-    const allMembers = [
-        ...(project.owner ? [{ ...project.owner, role: 'owner' }] : []),
-        ...(project.members || []),
-    ];
+    const allMembers = getProjectTeamMembers(project);
+    const canManage = canManageProjectTeam(project);
+    const countEl = document.getElementById('pmTeamCount');
+    if (countEl) countEl.textContent = String(allMembers.length);
 
     if (!allMembers.length) {
         listEl.innerHTML = '<div class="pm-empty-hint">No team members yet.</div>';
     } else {
         listEl.innerHTML = allMembers.map(m => `
-            <div class="pm-team-member" data-id="${m.id}">
+            <div class="pm-team-member" data-id="${esc(m.id)}">
                 <div class="pm-team-info">
-                    <div class="user-avatar">${m.photoURL ? `<img src="${esc(m.photoURL)}" alt="${esc(m.name || 'U')}">` : (m.name || 'U')[0].toUpperCase()}</div>
+                    <div class="user-avatar">${m.photoURL ? `<img src="${esc(m.photoURL)}" alt="${esc(m.name || 'U')}">` : esc((m.name || m.email || 'U').charAt(0).toUpperCase())}</div>
                     <div>
-                        <div class="member-name">${esc(m.name || 'User')} ${m.role === 'owner' ? '<span class="role-badge owner">owner</span>' : m.role === 'admin' ? '<span class="role-badge admin">admin</span>' : ''}</div>
+                        <div class="member-name">${esc(m.name || 'User')} ${renderMemberRoleBadge(m.role)}</div>
                         <div class="member-email">${esc(m.email || '')}</div>
                     </div>
                 </div>
                 <div class="pm-member-actions">
-                    ${m.role !== 'owner' ? `
-                        <button class="btn btn-sm btn-secondary promote-btn" data-id="${m.id}" data-role="${m.role}" title="${m.role === 'admin' ? 'Demote to member' : 'Promote to admin'}">
-                            ${m.role === 'admin' ? 'Demote' : 'Make Admin'}
+                    ${canManage && m.role !== TEAM_ROLES.OWNER ? `
+                        <button class="btn btn-sm btn-secondary promote-btn" data-id="${esc(m.id)}" data-role="${esc(m.role)}" title="${m.role === TEAM_ROLES.ADMIN ? 'Demote to member' : 'Promote to admin'}">
+                            ${m.role === TEAM_ROLES.ADMIN ? 'Demote' : 'Make Admin'}
                         </button>
-                        <button class="btn-icon danger remove-member-btn" data-id="${m.id}" title="Remove">
+                        <button class="btn-icon danger remove-member-btn" data-id="${esc(m.id)}" title="Remove">
                             <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
                         </button>
                     ` : ''}
@@ -779,23 +1262,35 @@ const renderTeam = (project) => {
         `).join('');
 
         listEl.querySelectorAll('.remove-member-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (confirm('Remove this member from the project?')) {
-                    project.members = (project.members || []).filter(m => m.id !== btn.dataset.id);
-                    saveState();
+            btn.addEventListener('click', async () => {
+                const member = (project.members || []).find(m => m.id === btn.dataset.id);
+                if (!member || !confirm(`Remove ${member.name || member.email} from the project?`)) return;
+                project.members = (project.members || []).filter(m => m.id !== btn.dataset.id);
+                clearAssigneeFromProjectCards(project, member.id);
+                try {
+                    await persistProjectTeam(project);
                     renderTeam(project);
+                    renderBoard();
+                    showToast('Member removed', 'success');
+                } catch {
+                    project.members.push(member);
                 }
             });
         });
 
         listEl.querySelectorAll('.promote-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', async () => {
                 const member = project.members?.find(m => m.id === btn.dataset.id);
                 if (!member) return;
-                member.role = member.role === 'admin' ? 'member' : 'admin';
-                saveState();
-                renderTeam(project);
-                showToast(`${member.name || member.email} is now ${member.role}`, 'success');
+                const prevRole = member.role;
+                member.role = member.role === TEAM_ROLES.ADMIN ? TEAM_ROLES.MEMBER : TEAM_ROLES.ADMIN;
+                try {
+                    await persistProjectTeam(project);
+                    renderTeam(project);
+                    showToast(`${member.name || member.email} is now ${member.role}`, 'success');
+                } catch {
+                    member.role = prevRole;
+                }
             });
         });
     }
@@ -820,7 +1315,7 @@ const renderTeam = (project) => {
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                     Copy
                 </button>
-                <button class="btn btn-secondary btn-sm" id="pmRegenInviteBtn" title="Generate new link">↺ New</button>
+                ${canManageProjectTeam(project) ? '<button class="btn btn-secondary btn-sm" id="pmRegenInviteBtn" title="Generate new link">↺ New</button>' : ''}
             </div>
         `;
         inviteSection.classList.remove('hidden');
@@ -836,8 +1331,12 @@ const renderTeam = (project) => {
         });
 
         document.getElementById('pmRegenInviteBtn')?.addEventListener('click', () => {
+            if (!canManageProjectTeam(project)) {
+                showToast('Only owners and admins can regenerate invite links', 'warning');
+                return;
+            }
             if (confirm('Generate a new invite link? The old one will stop working.')) {
-                sprint.inviteToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+                sprint.inviteToken = generateInviteToken();
                 saveState();
                 renderTeam(project);
                 showToast('New invite link generated', 'success');
@@ -870,9 +1369,8 @@ const doAddMember = () => {
     if (!project.members) project.members = [];
     const allEmails = [project.owner?.email, ...(project.members.map(m => m.email))].filter(Boolean);
     if (allEmails.includes(trimmed)) { showToast('Already a member', 'warning'); return; }
-    project.members.push({ id: generateId(), email: trimmed, name: trimmed.split('@')[0], role: 'member', addedAt: new Date().toISOString() });
-    saveState();
-    renderTeam(project);
+    project.members.push({ id: generateId(), email: trimmed, name: trimmed.split('@')[0], role: TEAM_ROLES.MEMBER, addedAt: new Date().toISOString() });
+    persistProjectTeam(project).then(() => renderTeam(project));
     document.getElementById('pmAddMemberForm')?.classList.add('hidden');
     input.value = '';
     showToast(`${trimmed} added`, 'success');
@@ -906,32 +1404,21 @@ document.getElementById('pmCancelDeleteBtn')?.addEventListener('click', () => {
     document.getElementById('editProjectBtn').classList.remove('hidden');
 });
 
-document.getElementById('pmConfirmDeleteBtn')?.addEventListener('click', () => {
+document.getElementById('pmConfirmDeleteBtn')?.addEventListener('click', async () => {
     const project = state.projects.find(p => p.id === state.currentProjectId);
     if (!project || !isProjectOwner(project)) return;
 
     const projectName = project.name;
-    const sprintIds = project.sprintIds || [];
 
-    // Remove all associated boards/sprints
-    state.boards = state.boards.filter(b => !sprintIds.includes(b.id));
-
-    // Remove the project
-    state.projects = state.projects.filter(p => p.id !== project.id);
-
-    // Reset current selections if they pointed to deleted data
-    if (state.currentProjectId === project.id) {
-        state.currentProjectId = state.projects[0]?.id || null;
-        const firstBoard = state.currentProjectId
-            ? state.boards.find(b => b.projectId === state.currentProjectId)
-            : state.boards[0];
-        state.currentBoardId = firstBoard?.id || null;
+    try {
+        await deleteProject(project.id);
+        renderBoard();
+        renderProjectManagement();
+        showToast(`"${projectName}" deleted`, 'success');
+    } catch (error) {
+        console.error('Error deleting project:', error);
+        showToast('Failed to delete project', 'error');
     }
-
-    saveState();
-    renderBoard();
-    renderProjectManagement();
-    showToast(`"${projectName}" deleted`, 'success');
 });
 
 // --------------------------------
@@ -947,16 +1434,23 @@ document.getElementById('editProjectBtn')?.addEventListener('click', () => {
     document.getElementById('pmEditProjectName').focus();
 });
 
-document.getElementById('pmSaveEditProjectBtn')?.addEventListener('click', () => {
+document.getElementById('pmSaveEditProjectBtn')?.addEventListener('click', async () => {
     const project = state.projects.find(p => p.id === state.currentProjectId);
     if (!project) return;
     const name = document.getElementById('pmEditProjectName').value.trim();
     if (!name) { showToast('Project name cannot be empty', 'error'); return; }
-    project.name = name;
-    project.description = document.getElementById('pmEditProjectDesc').value.trim();
-    saveState();
-    renderProjectManagement();
-    showToast('Project updated', 'success');
+
+    try {
+        await updateProject(project.id, {
+            name,
+            description: document.getElementById('pmEditProjectDesc').value.trim()
+        });
+        renderProjectManagement();
+        showToast('Project updated', 'success');
+    } catch (error) {
+        console.error('Error updating project:', error);
+        showToast('Failed to update project', 'error');
+    }
 });
 
 document.getElementById('pmCancelEditProjectBtn')?.addEventListener('click', () => {
@@ -975,26 +1469,24 @@ document.getElementById('addProjectBtn')?.addEventListener('click', () => {
     }
 });
 
-document.getElementById('pmSaveProjectBtn')?.addEventListener('click', () => {
+document.getElementById('pmSaveProjectBtn')?.addEventListener('click', async () => {
     const name = document.getElementById('pmNewProjectName')?.value.trim();
     if (!name) { showToast('Enter a project name', 'error'); return; }
     const desc = document.getElementById('pmNewProjectDesc')?.value.trim() || '';
-    const user = { id: generateId(), name: 'You', email: 'you@example.com', photoURL: null };
-    state.projects.push({
-        id: generateId(),
-        name,
-        description: desc,
-        owner: user,
-        members: [],
-        sprintIds: [],
-        backlog: [],
-    });
-    if (document.getElementById('pmNewProjectName')) document.getElementById('pmNewProjectName').value = '';
-    if (document.getElementById('pmNewProjectDesc')) document.getElementById('pmNewProjectDesc').value = '';
-    document.getElementById('pmAddProjectForm')?.classList.add('hidden');
-    saveState();
-    renderProjectManagement();
-    showToast(`Project "${name}" created`, 'success');
+
+    try {
+        await createProject({ name, description: desc });
+        state.currentBoardId = null;
+        if (document.getElementById('pmNewProjectName')) document.getElementById('pmNewProjectName').value = '';
+        if (document.getElementById('pmNewProjectDesc')) document.getElementById('pmNewProjectDesc').value = '';
+        document.getElementById('pmAddProjectForm')?.classList.add('hidden');
+        renderProjectManagement();
+        renderBoard();
+        showToast(`Project "${name}" created`, 'success');
+    } catch (error) {
+        console.error('Error creating project:', error);
+        showToast('Failed to create project', 'error');
+    }
 });
 
 document.getElementById('pmCancelProjectBtn')?.addEventListener('click', () => {

@@ -18,6 +18,11 @@
     <!-- Header -->
     <header class="header">
         <div class="header-left">
+            <button type="button" class="header-btn mobile-nav-btn" id="mobileNavBtn" aria-label="Open navigation" title="Menu">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </button>
             <div class="logo">
                 <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <rect x="3" y="3" width="7" height="7" rx="2" fill="currentColor" />
@@ -41,6 +46,28 @@
                 <div class="board-dropdown" id="projectDropdown">
                     <div class="dropdown-header">Projects</div>
                     <div class="board-list" id="projectList"></div>
+                    <div class="dropdown-divider"></div>
+                    <div id="projectQuickCreate" class="dropdown-quick-create hidden">
+                        <input type="text" id="quickProjectName" class="form-input" placeholder="Project name...">
+                        <div class="dropdown-quick-create-actions">
+                            <button class="btn btn-sm btn-primary" id="quickCreateProjectBtn">Create</button>
+                            <button class="btn btn-sm btn-secondary" id="quickCancelProjectBtn">Cancel</button>
+                        </div>
+                    </div>
+                    <button class="create-board-btn" id="createProjectBtn">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                        </svg>
+                        Create new project
+                    </button>
+                    <button class="create-board-btn" id="headerManageProjectsBtn">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                        </svg>
+                        Manage projects
+                    </button>
                 </div>
             </div>
 
@@ -78,6 +105,14 @@
             </button>
         </div>
         <div class="header-right">
+            <button class="header-btn" id="projectInfoBtn" title="Project info & team">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" />
+                    <circle cx="8.5" cy="7" r="4" stroke="currentColor" stroke-width="2" />
+                    <path d="M20 8v6M17 11h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                </svg>
+            </button>
             <button class="header-btn" id="searchBtn" title="Search">
                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2" />
@@ -101,6 +136,42 @@
             </div>
         </div>
     </header>
+
+    <!-- Mobile navigation drawer -->
+    <div class="mobile-nav-overlay" id="mobileNavOverlay" aria-hidden="true">
+        <div class="mobile-nav-drawer" id="mobileNavDrawer" role="dialog" aria-label="Navigation">
+            <div class="mobile-nav-header">
+                <h2>Navigate</h2>
+                <button type="button" class="modal-close" id="mobileNavClose" aria-label="Close navigation">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </button>
+            </div>
+            <div class="mobile-nav-current">
+                <span class="mobile-nav-current-label">Project</span>
+                <span class="mobile-nav-current-value" id="mobileNavProjectName">Select Project</span>
+                <span class="mobile-nav-current-label">Board</span>
+                <span class="mobile-nav-current-value" id="mobileNavBoardName">Select Board</span>
+            </div>
+            <section class="mobile-nav-section">
+                <h3>Projects</h3>
+                <div class="mobile-nav-list" id="mobileProjectList"></div>
+                <div class="mobile-quick-create hidden" id="mobileProjectQuickCreate">
+                    <input type="text" id="mobileQuickProjectName" class="form-input" placeholder="Project name...">
+                    <div class="mobile-quick-create-actions">
+                        <button type="button" class="btn btn-sm btn-primary" id="mobileQuickCreateProjectBtn">Create</button>
+                        <button type="button" class="btn btn-sm btn-secondary" id="mobileQuickCancelProjectBtn">Cancel</button>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary mobile-nav-action" id="mobileCreateProjectBtn">Create project</button>
+            </section>
+            <section class="mobile-nav-section">
+                <h3>Boards</h3>
+                <div class="mobile-nav-list" id="mobileBoardList"></div>
+                <button type="button" class="btn btn-sm btn-secondary mobile-nav-action" id="mobileCreateBoardBtn">Create board</button>
+            </section>
+            <button type="button" class="btn btn-primary mobile-nav-manage" id="mobileManageProjectsBtn">Manage Projects</button>
+        </div>
+    </div>
 
     <!-- Search Modal -->
     <div class="modal-overlay" id="searchModal">
@@ -132,6 +203,10 @@
                 </button>
             </div>
             <div class="modal-body">
+                <div class="form-group">
+                    <label for="boardProjectSelect">Project</label>
+                    <select id="boardProjectSelect" class="form-input"></select>
+                </div>
                 <div class="form-group">
                     <label for="boardName">Board Name</label>
                     <input type="text" id="boardName" placeholder="Enter board name..." class="form-input">
@@ -204,6 +279,7 @@
                         <input type="date" id="sprintEditEnd" class="form-input">
                     </div>
                 </div>
+                <p class="sprint-duration-hint" id="sprintEditDuration"></p>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="cancelSprintEditBtn">Cancel</button>
@@ -404,6 +480,44 @@
                         </div>
                     </div>
 
+                    <!-- Attachments -->
+                    <div class="card-section attachments-section" id="attachmentsSection">
+                        <h3>
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            Attachments
+                        </h3>
+                        <p class="attachments-drop-hint">Drop files here or use Upload</p>
+                        <div class="attachments-list" id="attachmentsList"></div>
+                        <div class="attachment-upload-row">
+                            <input type="file" id="attachmentFileInput" class="attachment-file-input" multiple>
+                            <button type="button" class="btn btn-sm btn-secondary" id="attachmentUploadBtn">Upload file</button>
+                            <span class="attachment-upload-progress hidden" id="attachmentUploadProgress">Uploading...</span>
+                        </div>
+                    </div>
+
+                    <!-- Comments -->
+                    <div class="card-section">
+                        <div class="comments-section-header">
+                            <h3>
+                                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                                Comments
+                            </h3>
+                            <button type="button" class="btn btn-sm btn-secondary" id="commentsSortToggle"
+                                title="Toggle comment order">Newest first</button>
+                        </div>
+                        <div class="comments-list" id="commentsList"></div>
+                        <div class="add-comment">
+                            <textarea id="newCommentInput" class="form-input comment-input" rows="2"
+                                placeholder="Write a comment..."></textarea>
+                            <button class="btn btn-sm btn-primary" id="addCommentBtn">Add Comment</button>
+                        </div>
+                    </div>
+
                     <!-- Time Tracking -->
                     <div class="card-section">
                         <h3>
@@ -413,6 +527,7 @@
                                     stroke-linejoin="round" />
                             </svg>
                             Time Tracking
+                            <span class="time-tab-badge" id="timeTrackingBadge"></span>
                         </h3>
                         <!-- Time summary bar -->
                         <div class="time-summary-bar" id="timeSummaryBar">
@@ -492,32 +607,7 @@
                     </div>
                     <div class="sidebar-section">
                         <h4>Labels</h4>
-                        <div class="label-picker" id="labelPicker">
-                            <button class="label-option" data-label="priority-high" data-color="#ef4444">
-                                <span class="label-color" style="background: #ef4444"></span>
-                                High Priority
-                            </button>
-                            <button class="label-option" data-label="priority-medium" data-color="#f59e0b">
-                                <span class="label-color" style="background: #f59e0b"></span>
-                                Medium Priority
-                            </button>
-                            <button class="label-option" data-label="priority-low" data-color="#22c55e">
-                                <span class="label-color" style="background: #22c55e"></span>
-                                Low Priority
-                            </button>
-                            <button class="label-option" data-label="bug" data-color="#dc2626">
-                                <span class="label-color" style="background: #dc2626"></span>
-                                Bug
-                            </button>
-                            <button class="label-option" data-label="feature" data-color="#8b5cf6">
-                                <span class="label-color" style="background: #8b5cf6"></span>
-                                Feature
-                            </button>
-                            <button class="label-option" data-label="improvement" data-color="#06b6d4">
-                                <span class="label-color" style="background: #06b6d4"></span>
-                                Improvement
-                            </button>
-                        </div>
+                        <div class="label-picker" id="labelPicker"></div>
                     </div>
                     <div class="sidebar-section">
                         <h4>Due Date</h4>
@@ -526,12 +616,22 @@
 
                     <div class="sidebar-section">
                         <h4>Assignee</h4>
+                        <div class="card-assignee-preview" id="cardAssigneePreview"></div>
                         <select id="cardAssignee" class="form-input">
                             <option value="">Unassigned</option>
                         </select>
                     </div>
                     <div class="sidebar-section">
                         <h4>Actions</h4>
+                        <button class="action-btn" id="copyCardLinkBtn">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            Copy Link
+                        </button>
                         <button class="action-btn" id="duplicateCardBtn">
                             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor"
@@ -791,16 +891,18 @@
     </div>
 
     <!-- Floating Burndown Panel -->
-    <div class="burndown-panel" id="burndownPanel" style="display: none;">
+    <div class="burndown-panel hidden" id="burndownPanel">
         <div class="burndown-header" id="burndownHeader">
             <div class="burndown-info">
                 <span class="burndown-label">Remaining Work</span>
                 <span class="burndown-value" id="totalRemainingValue">0h</span>
                 <span class="burndown-spent-label">· <span id="totalSpentValue">0h</span> spent</span>
+                <span class="burndown-filter-subtitle hidden" id="burndownFilterSubtitle"></span>
             </div>
             <div class="burndown-controls">
-                <button class="burndown-view-btn active" id="bdViewTeam" data-view="team" title="Team burndown">Team</button>
-                <button class="burndown-view-btn" id="bdViewPerson" data-view="person" title="Per-person burndown">Per Person</button>
+                <select id="burndownAssigneeFilter" class="burndown-assignee-filter" title="Filter by assignee">
+                    <option value="all">All team</option>
+                </select>
             </div>
             <button class="burndown-toggle">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -809,9 +911,17 @@
                 </svg>
             </button>
         </div>
+        <div class="burndown-empty-hint hidden" id="burndownEmptyHint"></div>
         <div class="burndown-chart-container">
             <canvas id="burndownChart"></canvas>
         </div>
+    </div>
+
+    <!-- Attachment image preview -->
+    <div class="attachment-lightbox hidden" id="attachmentLightbox" role="dialog" aria-modal="true" aria-label="Image preview">
+        <button type="button" class="attachment-lightbox-close" id="attachmentLightboxClose" aria-label="Close preview">×</button>
+        <img src="" alt="" class="attachment-lightbox-img" id="attachmentLightboxImg">
+        <span class="attachment-lightbox-caption" id="attachmentLightboxCaption"></span>
     </div>
 
     <!-- Chart.js -->
@@ -821,10 +931,12 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-storage-compat.js"></script>
 
     <div class="project-management-screen hidden" id="projectManagementScreen">
+        <div class="pm-sidebar-backdrop" id="pmSidebarBackdrop" aria-hidden="true"></div>
         <div class="pm-container">
-            <div class="pm-sidebar">
+            <div class="pm-sidebar" id="pmSidebar">
                 <div class="pm-sidebar-header">
                     <h3>Projects</h3>
                     <button id="addProjectBtn" class="btn-icon" title="Add New Project">
@@ -848,6 +960,18 @@
                 </div>
             </div>
             <div class="pm-content">
+                <button type="button" class="pm-back-btn" id="pmBackToBoardBtn" aria-label="Back to board">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                    Back to board
+                </button>
+                <button type="button" class="pm-sidebar-toggle" id="pmSidebarToggle" aria-label="Show projects list">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    Projects
+                </button>
                 <div id="pmNoProjectSelected" class="empty-state">
                     <div class="empty-state-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -901,6 +1025,7 @@
                             <button class="pm-tab active" data-tab="backlog">Backlog</button>
                             <button class="pm-tab" data-tab="sprints">Sprints</button>
                             <button class="pm-tab" data-tab="team">Team</button>
+                            <button class="pm-tab" data-tab="labels">Labels</button>
                         </div>
                     </div>
 
@@ -938,10 +1063,32 @@
                             </div>
                         </div>
 
+                        <!-- Labels Tab -->
+                        <div id="pmTabLabels" class="pm-tab-pane">
+                            <div class="pm-pane-header">
+                                <h3>Project Labels</h3>
+                                <button class="btn btn-primary" id="pmAddLabelBtn">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round">
+                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    </svg>
+                                    Add Label
+                                </button>
+                            </div>
+                            <div id="pmAddLabelForm" class="pm-add-label-form hidden">
+                                <input type="text" id="pmLabelNameInput" placeholder="Label name..." class="form-input">
+                                <input type="color" id="pmLabelColorInput" value="#6366f1" title="Label color">
+                                <button class="btn btn-primary btn-sm" id="pmSaveLabelBtn">Save</button>
+                                <button class="btn btn-secondary btn-sm" id="pmCancelLabelBtn">Cancel</button>
+                            </div>
+                            <div class="pm-labels-list" id="pmLabelsList"></div>
+                        </div>
+
                         <!-- Team Tab -->
                         <div id="pmTabTeam" class="pm-tab-pane">
                             <div class="pm-pane-header">
-                                <h3>Team Members</h3>
+                                <h3>Team Members <span class="team-count" id="pmTeamCount">0</span></h3>
                                 <button class="btn btn-primary" id="pmAddMemberBtn">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                         stroke-linecap="round" stroke-linejoin="round">

@@ -1,5 +1,5 @@
 import { auth, db, isFirebaseConfigured } from './config.js';
-import { generateId, showToast, getEffectiveRemainingHours } from './utils.js';
+import { generateId, showToast, getEffectiveRemainingHours, DEFAULT_PROJECT_LABELS } from './utils.js';
 
 // ================================
 // DATA STORE
@@ -19,20 +19,64 @@ export const setCurrentUser = (user) => { _currentUser = user; };
 
 export const getCurrentBoard = () => state.boards.find(b => b.id === state.currentBoardId);
 
+export const getActiveProject = () => {
+    if (state.currentProjectId) {
+        const project = state.projects.find(p => p.id === state.currentProjectId);
+        if (project) return project;
+    }
+    const board = getCurrentBoard();
+    if (board?.projectId) {
+        return state.projects.find(p => p.id === board.projectId) || null;
+    }
+    return null;
+};
+
+export const getCurrentProject = () => state.projects.find(p => p.id === state.currentProjectId);
+
+export const getBoardsForProject = (projectId) => {
+    if (!projectId) return state.boards.filter(b => !b.projectId);
+    return state.boards.filter(b => b.projectId === projectId);
+};
+
+const buildMemberEmails = (entity) => [
+    entity.owner?.email,
+    ...(entity.members || []).map(m => m.email)
+].filter(Boolean);
+
+const buildOwnerFromUser = (user) => {
+    if (!user) {
+        return { id: generateId(), name: 'You', email: 'you@example.com', photoURL: null };
+    }
+    return {
+        id: user.uid,
+        name: user.displayName || 'User',
+        email: user.email,
+        photoURL: user.photoURL || null
+    };
+};
+
 // ================================
 // SAMPLE DATA
 // ================================
 export const initializeSampleData = () => {
+    const user = getCurrentUser();
+    const owner = user ? {
+        id: user.uid,
+        name: user.displayName || 'User',
+        email: user.email,
+        photoURL: user.photoURL || null
+    } : {
+        id: 'owner-1',
+        name: 'You',
+        email: 'you@example.com',
+        photoURL: null
+    };
+
     const sampleBoard = {
         id: generateId(),
         name: 'My Project Board',
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        owner: {
-            id: 'owner-1',
-            name: 'You',
-            email: 'you@example.com',
-            photoURL: null
-        },
+        owner,
         members: [
             {
                 id: 'member-1',
@@ -101,6 +145,8 @@ export const initializeSampleData = () => {
         name: 'Main Project',
         description: 'Main development project',
         owner: sampleBoard.owner,
+        ownerId: sampleBoard.owner.id,
+        memberEmails: buildMemberEmails({ owner: sampleBoard.owner, members: sampleBoard.members }),
         members: [...sampleBoard.members],
         backlog: [
             { id: storyAuthId, type: 'story', title: 'User Authentication', status: 'open', addedAt: new Date().toISOString() },
@@ -109,10 +155,13 @@ export const initializeSampleData = () => {
             { id: storyDashId, type: 'story', title: 'Analytics Dashboard', status: 'open', addedAt: new Date().toISOString() },
             { id: generateId(), type: 'task', title: 'Add burndown chart to dashboard', linkedStoryId: storyDashId, status: 'open', addedAt: new Date().toISOString() },
         ],
-        sprintIds: [sampleBoard.id]
+        sprintIds: [sampleBoard.id],
+        labels: DEFAULT_PROJECT_LABELS.map(l => ({ ...l })),
     };
 
     sampleBoard.projectId = sampleProject.id;
+    sampleBoard.ownerId = sampleBoard.owner.id;
+    sampleBoard.memberEmails = buildMemberEmails(sampleBoard);
     sampleBoard.startDate = new Date().toISOString().split('T')[0];
     sampleBoard.endDate = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
 
@@ -140,32 +189,24 @@ export const saveState = async () => {
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
 
-            // 2. Save CURRENT board
-            const currentBoard = getCurrentBoard();
-            if (currentBoard) {
-                const memberEmails = [
-                    currentBoard.owner?.email,
-                    ...(currentBoard.members || []).map(m => m.email)
-                ].filter(Boolean);
-
-                await db.collection('boards').doc(currentBoard.id).set({
-                    ...currentBoard,
+            // 2. Save all boards
+            for (const board of state.boards) {
+                const memberEmails = buildMemberEmails(board);
+                await db.collection('boards').doc(board.id).set({
+                    ...board,
                     memberEmails,
+                    ownerId: board.ownerId || board.owner?.id || null,
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 }, { merge: true });
             }
 
-            // 3. Save CURRENT project
-            const currentProject = state.projects.find(p => p.id === state.currentProjectId);
-            if (currentProject) {
-                const projectMemberEmails = [
-                    currentProject.owner?.email,
-                    ...(currentProject.members || []).map(m => m.email)
-                ].filter(Boolean);
-
-                await db.collection('projects').doc(currentProject.id).set({
-                    ...currentProject,
-                    memberEmails: projectMemberEmails,
+            // 3. Save all projects
+            for (const project of state.projects) {
+                const memberEmails = buildMemberEmails(project);
+                await db.collection('projects').doc(project.id).set({
+                    ...project,
+                    memberEmails,
+                    ownerId: project.ownerId || project.owner?.id || null,
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 }, { merge: true });
             }
@@ -268,8 +309,6 @@ export const loadState = async () => {
         state.currentBoardId = parsed.currentBoardId;
         state.currentProjectId = parsed.currentProjectId;
         state.editingCard = parsed.editingCard;
-
-        if (!state.boards.length) initializeSampleData();
     } else {
         initializeSampleData();
     }
@@ -315,6 +354,138 @@ export const saveUserProfile = async (uid, data) => {
         console.error('Error saving user profile:', error);
         throw error;
     }
+};
+
+// ================================
+// PROJECT MANAGEMENT FUNCTIONS
+// ================================
+
+export const createProject = async (projectData) => {
+    const user = getCurrentUser();
+    const owner = projectData.owner || buildOwnerFromUser(user);
+    const members = projectData.members || [];
+
+    const project = {
+        id: generateId(),
+        name: projectData.name,
+        description: projectData.description || '',
+        owner,
+        ownerId: owner.id,
+        members,
+        backlog: projectData.backlog || [],
+        sprintIds: projectData.sprintIds || [],
+        labels: (projectData.labels?.length ? projectData.labels : DEFAULT_PROJECT_LABELS.map(l => ({ ...l }))),
+        inviteToken: projectData.inviteToken || generateInviteToken(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    };
+
+    const memberEmails = buildMemberEmails(project);
+
+    state.projects.push(project);
+    state.currentProjectId = project.id;
+
+    if (isFirebaseConfigured && _currentUser) {
+        try {
+            await db.collection('projects').doc(project.id).set({
+                ...project,
+                memberEmails,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (error) {
+            console.error('Error creating project in Firestore:', error);
+            state.projects = state.projects.filter(p => p.id !== project.id);
+            if (state.currentProjectId === project.id) {
+                state.currentProjectId = state.projects[0]?.id || null;
+            }
+            throw error;
+        }
+    }
+
+    await saveState();
+    return project;
+};
+
+export const updateProject = async (projectId, updates) => {
+    const project = state.projects.find(p => p.id === projectId);
+    if (!project) throw new Error('Project not found');
+
+    const snapshot = {
+        ...project,
+        backlog: [...(project.backlog || [])],
+        members: [...(project.members || [])],
+        sprintIds: [...(project.sprintIds || [])]
+    };
+
+    Object.assign(project, updates);
+    project.updatedAt = new Date().toISOString();
+    const memberEmails = buildMemberEmails(project);
+
+    if (isFirebaseConfigured && _currentUser) {
+        try {
+            await db.collection('projects').doc(projectId).set({
+                ...project,
+                memberEmails,
+                ownerId: project.ownerId || project.owner?.id || null,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+        } catch (error) {
+            console.error('Error updating project in Firestore:', error);
+            Object.assign(project, snapshot);
+            throw error;
+        }
+    }
+
+    await saveState();
+    return project;
+};
+
+export const deleteProject = async (projectId) => {
+    const project = state.projects.find(p => p.id === projectId);
+    if (!project) throw new Error('Project not found');
+
+    const sprintIds = new Set([
+        ...(project.sprintIds || []),
+        ...state.boards.filter(b => b.projectId === projectId).map(b => b.id)
+    ]);
+    const boardsToDelete = state.boards.filter(b => sprintIds.has(b.id));
+    const deletedBoardIds = boardsToDelete.map(b => b.id);
+
+    const projectsSnapshot = [...state.projects];
+    const boardsSnapshot = [...state.boards];
+    const prevProjectId = state.currentProjectId;
+    const prevBoardId = state.currentBoardId;
+
+    state.boards = state.boards.filter(b => !sprintIds.has(b.id));
+    state.projects = state.projects.filter(p => p.id !== projectId);
+
+    if (state.currentProjectId === projectId) {
+        state.currentProjectId = state.projects[0]?.id || null;
+        const nextBoard = state.boards.find(b => b.projectId === state.currentProjectId) || state.boards[0];
+        state.currentBoardId = nextBoard?.id || null;
+    } else if (deletedBoardIds.includes(state.currentBoardId)) {
+        const nextBoard = state.boards.find(b => b.projectId === state.currentProjectId) || state.boards[0];
+        state.currentBoardId = nextBoard?.id || null;
+    }
+
+    if (isFirebaseConfigured && _currentUser) {
+        try {
+            for (const board of boardsToDelete) {
+                await db.collection('boards').doc(board.id).delete();
+            }
+            await db.collection('projects').doc(projectId).delete();
+        } catch (error) {
+            console.error('Error deleting project in Firestore:', error);
+            state.projects = projectsSnapshot;
+            state.boards = boardsSnapshot;
+            state.currentProjectId = prevProjectId;
+            state.currentBoardId = prevBoardId;
+            throw error;
+        }
+    }
+
+    await saveState();
+    return project;
 };
 
 // ================================
@@ -498,8 +669,11 @@ export const createCard = async (boardId, listId, title, description = '') => {
         labels: [],
         dueDate: '',
         checklist: [],
+        comments: [],
         initialEstimate: 0,
         remainingHoursLog: [],
+        spentHoursLog: [],
+        attachments: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
@@ -599,12 +773,14 @@ export const moveCard = async (boardId, sourceListId, targetListId, cardId, newI
     if (cardIndex === -1) throw new Error('Card not found');
     
     const card = sourceList.cards[cardIndex];
-    
-    // Remove from source list
+
+    let insertIndex = newIndex;
+    if (sourceListId === targetListId && cardIndex < newIndex) {
+        insertIndex = newIndex - 1;
+    }
+
     sourceList.cards.splice(cardIndex, 1);
-    
-    // Add to target list at specified position
-    targetList.cards.splice(newIndex, 0, card);
+    targetList.cards.splice(insertIndex, 0, card);
     
     // Save to Firestore if configured
     if (isFirebaseConfigured && _currentUser) {
@@ -648,12 +824,17 @@ export const createBoard = async (boardData) => {
     state.boards.push(board);
     state.currentBoardId = board.id;
 
+    const memberEmails = buildMemberEmails(board);
+    board.memberEmails = memberEmails;
+    board.ownerId = board.owner?.id || auth.currentUser?.uid || null;
+
     // Save to Firestore if configured and user is authenticated
     if (isFirebaseConfigured && auth.currentUser) {
         try {
             await db.collection('boards').doc(board.id).set({
                 ...board,
-                ownerId: auth.currentUser.uid,
+                memberEmails,
+                ownerId: board.ownerId,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
             });

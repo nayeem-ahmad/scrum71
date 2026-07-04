@@ -1,5 +1,5 @@
-import { state, getCurrentBoard, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentUser, createList, updateListTitle, deleteList, reorderLists, createCard, updateCard, deleteCard, moveCard } from './store.js';
-import { generateId, showToast, getDragAfterElement, getEffectiveRemainingHours } from './utils.js';
+import { state, getCurrentBoard, getActiveProject, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentUser, createList, updateListTitle, deleteList, reorderLists, createCard, updateCard, deleteCard, moveCard } from './store.js';
+import { generateId, showToast, getDragAfterElement, getEffectiveRemainingHours, getSpentHours, getListHourTotals, getSprintTotalEstimate, formatSprintDuration, getProjectTeamMembers, getLabelColor, getLabelName } from './utils.js';
 
 // ================================
 // BOARD RENDERING
@@ -25,6 +25,8 @@ const updateSprintInfoBar = (board) => {
     if (datesEl && (start || end)) {
         const fmt = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '?';
         const today = new Date(); today.setHours(0,0,0,0);
+        const duration = formatSprintDuration(start, end);
+        const durationInfo = duration ? ` · ${duration}` : '';
         let daysInfo = '';
         if (end) {
             const endDate = new Date(end + 'T00:00:00');
@@ -33,7 +35,7 @@ const updateSprintInfoBar = (board) => {
             else if (diff === 0) daysInfo = ` · <span style="color:var(--warning)">ends today</span>`;
             else daysInfo = ` · ${diff}d left`;
         }
-        datesEl.innerHTML = `📅 ${fmt(start)} – ${fmt(end)}${daysInfo}`;
+        datesEl.innerHTML = `📅 ${fmt(start)} – ${fmt(end)}${durationInfo}${daysInfo}`;
     } else if (datesEl) {
         datesEl.textContent = '';
     }
@@ -51,8 +53,16 @@ export const renderBoard = () => {
     if (!boardElement) return;
 
     if (!board) {
-        boardElement.innerHTML = '<div class="empty-state">Select a project and board to get started</div>';
+        const project = state.projects.find(p => p.id === state.currentProjectId);
+        let message = 'Select a project and board to get started';
+        if (!state.currentProjectId && state.projects.length) {
+            message = 'Select a project from the header to get started';
+        } else if (state.currentProjectId && project) {
+            message = `No boards in "${project.name}". Create one from the board menu.`;
+        }
+        boardElement.innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
         document.documentElement.style.setProperty('--board-bg', '#f3f4f6');
+        updateBurndownPanelVisibility(null);
         return;
     }
 
@@ -124,15 +134,24 @@ export const renderBoard = () => {
 
     boardElement.appendChild(addListEl);
     initDragAndDrop();
+    recordDailyBurndown(board);
+    updateBurndownPanelVisibility(board);
     updateBurndownChart();
 };
 
 export const updateSelectorTexts = () => {
     const currentProject = state.projects.find(p => p.id === state.currentProjectId);
-    if (currentProjectName) currentProjectName.textContent = currentProject ? currentProject.name : 'Select Project';
+    const projectLabel = currentProject ? currentProject.name : 'Select Project';
+    if (currentProjectName) currentProjectName.textContent = projectLabel;
 
     const currentBoard = getCurrentBoard();
-    if (currentBoardName) currentBoardName.textContent = currentBoard ? currentBoard.name : 'Select Board';
+    const boardLabel = currentBoard ? currentBoard.name : 'Select Board';
+    if (currentBoardName) currentBoardName.textContent = boardLabel;
+
+    const mobileProjectName = document.getElementById('mobileNavProjectName');
+    const mobileBoardName = document.getElementById('mobileNavBoardName');
+    if (mobileProjectName) mobileProjectName.textContent = projectLabel;
+    if (mobileBoardName) mobileBoardName.textContent = boardLabel;
 };
 
 // ================================
@@ -144,22 +163,26 @@ export const createListElement = (list) => {
     listEl.className = 'list';
     listEl.dataset.listId = list.id;
 
-    // Calculate totals
-    const totalInitialEstimate = list.cards.reduce((sum, card) => sum + (card.initialEstimate || 0), 0);
-    const totalRemainingHours = list.cards.reduce((sum, card) => sum + getEffectiveRemainingHours(card), 0);
+    const { estimate: totalInitialEstimate, remaining: totalRemainingHours } = getListHourTotals(list);
+    const estimateBadge = totalInitialEstimate > 0
+        ? `<span class="list-hour-badge estimate" title="Sum of initial estimates for all cards in this list">
+                    <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 6V12L16 14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                    ${totalInitialEstimate}h
+                </span>`
+        : '';
+    const remainingBadge = totalRemainingHours > 0
+        ? `<span class="list-hour-badge remaining" title="Sum of effective remaining hours for all cards in this list">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M12 2V6M12 18V22M4.93 4.93L7.76 7.76M16.24 16.24L19.07 19.07M2 12H6M18 12H22M4.93 19.07L7.76 16.24M16.24 7.76L19.07 4.93" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                    ${totalRemainingHours}h
+                </span>`
+        : '';
 
     listEl.innerHTML = `
         <div class="list-header">
             <input type="text" class="list-title" value="${list.title}">
             <div class="list-badges">
-                <span class="list-hour-badge estimate" title="Total Initial Estimate">
-                    <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 6V12L16 14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                    ${totalInitialEstimate}h
-                </span>
-                <span class="list-hour-badge remaining" title="Total Remaining Hours">
-                    <svg viewBox="0 0 24 24" fill="none"><path d="M12 2V6M12 18V22M4.93 4.93L7.76 7.76M16.24 16.24L19.07 19.07M2 12H6M18 12H22M4.93 19.07L7.76 16.24M16.24 7.76L19.07 4.93" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                    ${totalRemainingHours}h
-                </span>
+                ${estimateBadge}
+                ${remainingBadge}
                 <span class="list-count">${list.cards.length}</span>
             </div>
             <button class="list-menu-btn">
@@ -374,15 +397,6 @@ export const createListElement = (list) => {
 // ================================
 // CARD ELEMENT
 // ================================
-const LABEL_COLORS = {
-    'priority-high': '#ef4444',
-    'priority-medium': '#f59e0b',
-    'priority-low': '#22c55e',
-    'bug': '#dc2626',
-    'feature': '#8b5cf6',
-    'improvement': '#06b6d4',
-};
-
 const escapeHtml = (str) => {
     const div = document.createElement('div');
     div.textContent = str == null ? '' : String(str);
@@ -411,10 +425,11 @@ export const createCardElement = (card, listId) => {
     cardEl.dataset.cardId = card.id;
     cardEl.draggable = true;
 
+    const project = getActiveProject();
     const labels = card.labels || [];
     const labelsHtml = labels.length ? `
         <div class="card-labels">
-            ${labels.map(l => `<div class="card-label" style="background: ${LABEL_COLORS[l] || 'var(--accent-primary)'}" title="${escapeHtml(l)}"></div>`).join('')}
+            ${labels.map(l => `<div class="card-label" style="background: ${getLabelColor(project, l)}" title="${escapeHtml(getLabelName(project, l))}"></div>`).join('')}
         </div>
     ` : '';
 
@@ -426,6 +441,16 @@ export const createCardElement = (card, listId) => {
             <span class="card-meta-item ${due.cls}" title="Due ${escapeHtml(due.label)}">
                 <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
                 ${escapeHtml(due.label)}
+            </span>
+        `);
+    }
+
+    const comments = Array.isArray(card.comments) ? card.comments : [];
+    if (comments.length) {
+        metaParts.push(`
+            <span class="card-meta-item" title="Comments">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                ${comments.length}
             </span>
         `);
     }
@@ -444,15 +469,31 @@ export const createCardElement = (card, listId) => {
 
     const est = Number(card.initialEstimate) || 0;
     const rem = getEffectiveRemainingHours(card);
-    const spent = (card.spentHoursLog || []).reduce((sum, e) => sum + (Number(e.spentHours) || 0), 0);
-    if (est > 0 || rem > 0 || spent > 0) {
-        const parts = [];
-        if (spent > 0) parts.push(`<span class="meta-spent">${spent}h spent</span>`);
-        if (rem > 0 || est > 0) parts.push(`${rem}h / ${est}h`);
+    const spent = getSpentHours(card);
+    if (rem > 0) {
         metaParts.push(`
-            <span class="card-meta-item" title="Spent / Remaining / Estimate">
+            <span class="card-meta-item time-remaining" title="Remaining hours">
                 <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                ${parts.join(' · ')}
+                ${rem}h
+            </span>
+        `);
+    }
+    if (est > 0 || spent > 0) {
+        const overBudget = est > 0 && spent > est;
+        metaParts.push(`
+            <span class="card-meta-item time-spent ${overBudget ? 'over-budget' : ''}" title="Spent / Estimate">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                ${spent} / ${est}h
+            </span>
+        `);
+    }
+
+    const attachments = Array.isArray(card.attachments) ? card.attachments : [];
+    if (attachments.length) {
+        metaParts.push(`
+            <span class="card-meta-item" title="Attachments">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                ${attachments.length}
             </span>
         `);
     }
@@ -460,14 +501,15 @@ export const createCardElement = (card, listId) => {
     // Assignee avatar(s)
     let assigneeHtml = '';
     if (card.assigneeId) {
-        const board = getCurrentBoard();
-        const allMembers = board ? [board.owner, ...(board.members || [])] : [];
-        const assignee = allMembers.find(m => m?.id === card.assigneeId);
+        const team = getProjectTeamMembers(getActiveProject());
+        const assignee = team.find(m => m?.id === card.assigneeId);
         if (assignee) {
             const initials = (assignee.name || assignee.email || 'U').charAt(0).toUpperCase();
             assigneeHtml = assignee.photoURL
                 ? `<div class="card-assignee" title="${escapeHtml(assignee.name || assignee.email || '')}"><img src="${escapeHtml(assignee.photoURL)}" alt="${escapeHtml(initials)}"></div>`
-                : `<div class="card-assignee" title="${escapeHtml(assignee.name || assignee.email || '')}">${initials}</div>`;
+                : `<div class="card-assignee" title="${escapeHtml(assignee.name || assignee.email || '')}">${escapeHtml(initials)}</div>`;
+        } else {
+            assigneeHtml = `<div class="card-assignee unknown" title="Unknown member">?</div>`;
         }
     }
 
@@ -638,17 +680,14 @@ const dropCardToContainer = async (cardId, container, clientY) => {
     const board = getCurrentBoard();
     if (!board) return false;
 
-    let sourceList, targetList, card;
-    board.lists.forEach(l => {
-        if (l.id === targetListId) targetList = l;
-        const cIndex = l.cards.findIndex(c => c.id === cardId);
-        if (cIndex !== -1) {
-            sourceList = l;
-            [card] = l.cards.splice(cIndex, 1);
-        }
-    });
+    let sourceList = null;
+    let targetList = null;
+    for (const list of board.lists) {
+        if (list.id === targetListId) targetList = list;
+        if (list.cards.some(c => c.id === cardId)) sourceList = list;
+    }
 
-    if (!sourceList || !targetList || !card) return false;
+    if (!sourceList || !targetList) return false;
 
     const afterElement = getDragAfterElement(container, clientY);
     let insertIndex = targetList.cards.length;
@@ -657,17 +696,14 @@ const dropCardToContainer = async (cardId, container, clientY) => {
         const idx = targetList.cards.findIndex(c => c.id === afterId);
         if (idx !== -1) insertIndex = idx;
     }
-    
+
     try {
         await moveCard(board.id, sourceList.id, targetList.id, cardId, insertIndex);
-        targetList.cards.splice(insertIndex, 0, card);
         renderBoard();
         return true;
     } catch (error) {
         console.error('Error moving card:', error);
         showToast('Failed to move card', 'error');
-        // Rollback local state
-        sourceList.cards.push(card);
         renderBoard();
         return false;
     }
@@ -759,19 +795,88 @@ const handleCardTouchEnd = (e) => {
 // BURNDOWN CHART
 // ================================
 let burndownChart = null;
-let burndownViewMode = 'team'; // 'team' | 'person'
+let burndownAssigneeFilter = 'all';
 
-const PERSON_COLORS = [
-    '#6366f1','#f59e0b','#22c55e','#ef4444','#3b82f6','#8b5cf6','#ec4899','#14b8a6'
-];
+const getBurndownFilterKey = (projectId) => `flowboard-burndown-filter-${projectId || 'none'}`;
 
-const buildBurndownDays = (cards, startDate, endDate) => {
+const loadBurndownAssigneeFilter = (projectId) => {
+    const saved = localStorage.getItem(getBurndownFilterKey(projectId));
+    return saved || 'all';
+};
+
+const saveBurndownAssigneeFilter = (projectId, value) => {
+    localStorage.setItem(getBurndownFilterKey(projectId), value);
+};
+
+const buildByAssigneeTotals = (cards) => {
+    const byAssignee = {};
+    cards.forEach(card => {
+        if (!card.assigneeId) return;
+        const rem = getEffectiveRemainingHours(card);
+        byAssignee[card.assigneeId] = (byAssignee[card.assigneeId] || 0) + rem;
+    });
+    return byAssignee;
+};
+
+export const recordDailyBurndown = (board) => {
+    if (!board?.lists) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const allCards = [];
+    board.lists.forEach(list => list.cards.forEach(card => allCards.push(card)));
+    const totalRemaining = allCards.reduce((sum, card) => sum + getEffectiveRemainingHours(card), 0);
+    const byAssignee = buildByAssigneeTotals(allCards);
+
+    if (!Array.isArray(board.history)) board.history = [];
+
+    const existing = board.history.find(h => h.date === today);
+    if (existing) {
+        let changed = false;
+        if (existing.remaining !== totalRemaining) {
+            existing.remaining = totalRemaining;
+            changed = true;
+        }
+        if (JSON.stringify(existing.byAssignee || {}) !== JSON.stringify(byAssignee)) {
+            existing.byAssignee = byAssignee;
+            changed = true;
+        }
+        if (changed) saveState();
+        return;
+    }
+
+    board.history.push({ date: today, remaining: totalRemaining, byAssignee });
+    board.history.sort((a, b) => a.date.localeCompare(b.date));
+    saveState();
+};
+
+const populateBurndownAssigneeFilter = (board) => {
+    const select = document.getElementById('burndownAssigneeFilter');
+    if (!select) return;
+
+    const project = state.projects.find(p => p.id === board.projectId);
+    const members = getProjectTeamMembers(project);
+    const saved = loadBurndownAssigneeFilter(board.projectId);
+    const valid = saved === 'all' || members.some(m => m.id === saved);
+
+    select.innerHTML = '<option value="all">All team</option>' +
+        members.map(m => {
+            const label = m.name || m.email || 'Member';
+            return `<option value="${escapeHtml(m.id)}">${escapeHtml(label)}</option>`;
+        }).join('');
+
+    burndownAssigneeFilter = valid ? saved : 'all';
+    select.value = burndownAssigneeFilter;
+};
+
+const buildBurndownDays = (cards, startDate, endDate, history = []) => {
     const allTimestamps = new Set();
     cards.forEach(card => {
         (card.remainingHoursLog || []).forEach(e => allTimestamps.add(e.timestamp));
     });
 
     let uniqueDays = [...new Set([...allTimestamps].map(t => t.slice(0, 10)))];
+
+    history.forEach(h => uniqueDays.push(h.date));
 
     // Include sprint start/end if available
     if (startDate) uniqueDays.push(startDate);
@@ -795,26 +900,53 @@ export const updateBurndownChart = () => {
     const board = getCurrentBoard();
     if (!board) return;
 
-    // Collect all cards from the board
+    populateBurndownAssigneeFilter(board);
+
     const allCards = [];
     board.lists.forEach(list => list.cards.forEach(card => allCards.push(card)));
 
-    // Compute current total remaining + spent
-    const totalRemaining = allCards.reduce((sum, card) => sum + getEffectiveRemainingHours(card), 0);
-    const totalSpent = allCards.reduce((sum, card) =>
-        sum + (card.spentHoursLog || []).reduce((s, e) => s + (Number(e.spentHours) || 0), 0), 0);
+    const assigneeId = burndownAssigneeFilter === 'all' ? null : burndownAssigneeFilter;
+    const chartCards = assigneeId
+        ? allCards.filter(card => card.assigneeId === assigneeId)
+        : allCards;
+
+    const totalRemaining = chartCards.reduce((sum, card) => sum + getEffectiveRemainingHours(card), 0);
+    const totalSpent = chartCards.reduce((sum, card) => sum + getSpentHours(card), 0);
 
     const totalEl = document.getElementById('totalRemainingValue');
     if (totalEl) totalEl.textContent = `${totalRemaining} h`;
     const spentEl = document.getElementById('totalSpentValue');
     if (spentEl) spentEl.textContent = `${totalSpent}h`;
 
+    const emptyEl = document.getElementById('burndownEmptyHint');
+    if (emptyEl) {
+        emptyEl.textContent = assigneeId && !chartCards.length
+            ? 'No cards assigned to this member'
+            : '';
+        emptyEl.classList.toggle('hidden', !(assigneeId && !chartCards.length));
+    }
+
+    const subtitleEl = document.getElementById('burndownFilterSubtitle');
+    if (subtitleEl) {
+        if (assigneeId) {
+            const project = state.projects.find(p => p.id === board.projectId);
+            const member = getProjectTeamMembers(project).find(m => m.id === assigneeId);
+            const label = member?.name || member?.email || 'Member';
+            subtitleEl.textContent = `Showing ${label}'s work`;
+            subtitleEl.classList.remove('hidden');
+        } else {
+            subtitleEl.textContent = '';
+            subtitleEl.classList.add('hidden');
+        }
+    }
+
     const ctx = document.getElementById('burndownChart');
     if (!ctx) return;
     if (burndownChart) { burndownChart.destroy(); burndownChart = null; }
     if (typeof Chart === 'undefined') return;
 
-    const uniqueDays = buildBurndownDays(allCards, board.startDate, board.endDate);
+    const history = Array.isArray(board.history) ? board.history : [];
+    const uniqueDays = buildBurndownDays(chartCards.length ? chartCards : allCards, board.startDate, board.endDate, history);
     if (!uniqueDays.length) return;
 
     const chartLabels = uniqueDays.map(d => {
@@ -823,92 +955,56 @@ export const updateBurndownChart = () => {
     });
 
     const datasets = [];
+    const historyByDate = Object.fromEntries(history.map(h => [h.date, h]));
 
-    if (burndownViewMode === 'team') {
-        // Actual remaining line
-        const actualData = uniqueDays.map(d => {
-            const endOfDay = new Date(`${d}T23:59:59.999Z`);
-            return allCards.reduce((sum, card) => sum + getEffectiveRemainingHours(card, endOfDay), 0);
-        });
-        datasets.push({
-            label: 'Remaining',
-            data: actualData,
-            borderColor: '#6366f1',
-            backgroundColor: 'rgba(99, 102, 241, 0.08)',
-            fill: true,
-            tension: 0.4,
-            pointRadius: 3
-        });
+    const getHistoryRemaining = (date) => {
+        const entry = historyByDate[date];
+        if (!entry) return undefined;
+        if (assigneeId) return entry.byAssignee?.[assigneeId];
+        return entry.remaining;
+    };
 
-        // Ideal line (from startDate total to 0 at endDate)
-        if (board.startDate && board.endDate) {
-            const startEndOfDay = new Date(`${board.startDate}T23:59:59.999Z`);
-            const totalAtStart = allCards.reduce((sum, card) => sum + getEffectiveRemainingHours(card, startEndOfDay), 0);
-            const sprintDays = uniqueDays.filter(d => d >= board.startDate && d <= board.endDate);
-            if (sprintDays.length > 1 && totalAtStart > 0) {
-                const idealData = uniqueDays.map(d => {
-                    if (d < board.startDate) return null;
-                    if (d > board.endDate) return null;
-                    const dayIdx = sprintDays.indexOf(d);
-                    if (dayIdx < 0) return null;
-                    return Math.max(0, totalAtStart * (1 - dayIdx / (sprintDays.length - 1)));
-                });
-                datasets.push({
-                    label: 'Ideal',
-                    data: idealData,
-                    borderColor: '#94a3b8',
-                    borderDash: [5, 5],
-                    backgroundColor: 'transparent',
-                    fill: false,
-                    tension: 0,
-                    pointRadius: 0
-                });
-            }
-        }
-    } else {
-        // Per-person mode
-        const project = state.projects.find(p => p.id === board.projectId);
-        const allMembers = project ? [
-            ...(project.owner ? [{ ...project.owner }] : []),
-            ...(project.members || [])
-        ] : (board.owner ? [board.owner, ...(board.members || [])] : []);
+    const actualData = uniqueDays.map(d => {
+        const histVal = getHistoryRemaining(d);
+        if (histVal !== undefined && histVal !== null) return histVal;
+        const endOfDay = new Date(`${d}T23:59:59.999Z`);
+        return chartCards.reduce((sum, card) => sum + getEffectiveRemainingHours(card, endOfDay), 0);
+    });
 
-        // Group cards by assigneeId
-        const assignedCards = {};
-        allCards.forEach(card => {
-            if (card.assigneeId) {
-                if (!assignedCards[card.assigneeId]) assignedCards[card.assigneeId] = [];
-                assignedCards[card.assigneeId].push(card);
-            }
-        });
+    const actualLabel = assigneeId ? 'Actual (member)' : 'Actual';
+    datasets.push({
+        label: actualLabel,
+        data: actualData,
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99, 102, 241, 0.08)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 3,
+        borderWidth: 2.5
+    });
 
-        let colorIdx = 0;
-        allMembers.forEach(member => {
-            const cards = assignedCards[member.id] || [];
-            if (!cards.length) return;
-            const data = uniqueDays.map(d => {
-                const endOfDay = new Date(`${d}T23:59:59.999Z`);
-                return cards.reduce((sum, card) => sum + getEffectiveRemainingHours(card, endOfDay), 0);
+    if (board.startDate && board.endDate) {
+        const totalEstimate = getSprintTotalEstimate(chartCards);
+        const sprintDays = uniqueDays.filter(d => d >= board.startDate && d <= board.endDate);
+        if (sprintDays.length >= 1 && totalEstimate > 0) {
+            const lastIdx = Math.max(sprintDays.length - 1, 1);
+            const idealData = uniqueDays.map(d => {
+                if (d < board.startDate) return null;
+                if (d > board.endDate) return null;
+                const dayIdx = sprintDays.indexOf(d);
+                if (dayIdx < 0) return null;
+                return Math.max(0, totalEstimate * (1 - dayIdx / lastIdx));
             });
-            const color = PERSON_COLORS[colorIdx % PERSON_COLORS.length];
-            colorIdx++;
             datasets.push({
-                label: member.name || member.email,
-                data,
-                borderColor: color,
-                backgroundColor: color + '18',
-                fill: false,
-                tension: 0.4,
-                pointRadius: 3
-            });
-        });
-
-        if (!datasets.length) {
-            datasets.push({
-                label: 'No assigned cards',
-                data: uniqueDays.map(() => 0),
+                label: 'Ideal',
+                data: idealData,
                 borderColor: '#94a3b8',
-                backgroundColor: 'transparent'
+                borderDash: [6, 4],
+                backgroundColor: 'transparent',
+                fill: false,
+                tension: 0,
+                pointRadius: 0,
+                borderWidth: 2
             });
         }
     }
@@ -920,8 +1016,21 @@ export const updateBurndownChart = () => {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: datasets.length > 1, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
-                tooltip: { mode: 'index', intersect: false }
+                legend: {
+                    display: datasets.length > 1,
+                    position: 'top',
+                    labels: { boxWidth: 14, font: { size: 11 }, usePointStyle: true }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        label: (ctx) => {
+                            const value = ctx.parsed.y;
+                            return value == null ? '' : `${ctx.dataset.label}: ${value}h`;
+                        }
+                    }
+                }
             },
             scales: {
                 y: { beginAtZero: true, title: { display: true, text: 'Hours' } },
@@ -929,27 +1038,111 @@ export const updateBurndownChart = () => {
             }
         }
     });
+};
 
-    // Wire view toggle buttons
-    document.querySelectorAll('.burndown-view-btn').forEach(btn => {
-        btn.onclick = () => {
-            burndownViewMode = btn.dataset.view;
-            document.querySelectorAll('.burndown-view-btn').forEach(b => b.classList.toggle('active', b === btn));
-            updateBurndownChart();
-        };
+export const updateBurndownPanelVisibility = (board) => {
+    const panel = document.getElementById('burndownPanel');
+    if (!panel) return;
+
+    const pmScreen = document.getElementById('projectManagementScreen');
+    const boardContainer = document.getElementById('boardContainer');
+    const pmVisible = pmScreen && !pmScreen.classList.contains('hidden');
+    const boardVisible = boardContainer && !boardContainer.classList.contains('hidden');
+    const hasSprintDates = !!(board?.startDate && board?.endDate);
+
+    panel.classList.toggle('hidden', pmVisible || !boardVisible || !hasSprintDates);
+};
+
+const initBurndownPanel = () => {
+    const panel = document.getElementById('burndownPanel');
+    const header = document.getElementById('burndownHeader');
+    const toggleBtn = panel?.querySelector('.burndown-toggle');
+    if (!panel || !header || !toggleBtn) return;
+
+    const isMobileBurndown = () => window.matchMedia('(max-width: 768px)').matches;
+
+    const applyBurndownLayout = () => {
+        if (isMobileBurndown()) {
+            panel.style.left = '';
+            panel.style.top = '';
+            panel.style.right = '';
+            panel.style.bottom = '';
+            panel.classList.add('mobile-sheet');
+            return;
+        }
+        panel.classList.remove('mobile-sheet');
+        const saved = localStorage.getItem('flowboard-burndown-position');
+        if (!saved) return;
+        try {
+            const pos = JSON.parse(saved);
+            if (typeof pos.left === 'number' && typeof pos.top === 'number') {
+                panel.style.right = 'auto';
+                panel.style.bottom = 'auto';
+                panel.style.left = `${pos.left}px`;
+                panel.style.top = `${pos.top}px`;
+            }
+        } catch { /* ignore */ }
+    };
+
+    applyBurndownLayout();
+    window.matchMedia('(max-width: 768px)').addEventListener('change', applyBurndownLayout);
+
+    toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        panel.classList.toggle('collapsed');
+    });
+
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+
+    header.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('button')) return;
+        if (isMobileBurndown()) return;
+        dragging = true;
+        header.setPointerCapture(e.pointerId);
+        const rect = panel.getBoundingClientRect();
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = rect.left;
+        startTop = rect.top;
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+        panel.style.left = `${startLeft}px`;
+        panel.style.top = `${startTop}px`;
+        panel.classList.add('dragging');
+    });
+
+    header.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        panel.style.left = `${startLeft + (e.clientX - startX)}px`;
+        panel.style.top = `${startTop + (e.clientY - startY)}px`;
+    });
+
+    const endDrag = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        panel.classList.remove('dragging');
+        header.releasePointerCapture(e.pointerId);
+        const rect = panel.getBoundingClientRect();
+        localStorage.setItem('flowboard-burndown-position', JSON.stringify({
+            left: Math.max(0, rect.left),
+            top: Math.max(0, rect.top)
+        }));
+    };
+
+    header.addEventListener('pointerup', endDrag);
+    header.addEventListener('pointercancel', endDrag);
+
+    const assigneeSelect = document.getElementById('burndownAssigneeFilter');
+    assigneeSelect?.addEventListener('change', () => {
+        const board = getCurrentBoard();
+        burndownAssigneeFilter = assigneeSelect.value || 'all';
+        if (board?.projectId) saveBurndownAssigneeFilter(board.projectId, burndownAssigneeFilter);
+        updateBurndownChart();
     });
 };
 
-// Burndown panel collapse/expand
-(() => {
-    const panel = document.getElementById('burndownPanel');
-    const toggleBtn = panel?.querySelector('.burndown-toggle');
-    const chartContainer = panel?.querySelector('.burndown-chart-container');
-    if (!toggleBtn || !chartContainer) return;
-    let collapsed = false;
-    toggleBtn.addEventListener('click', () => {
-        collapsed = !collapsed;
-        chartContainer.style.display = collapsed ? 'none' : '';
-        toggleBtn.style.transform = collapsed ? 'rotate(180deg)' : '';
-    });
-})();
+initBurndownPanel();

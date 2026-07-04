@@ -29,3 +29,4 @@ build/
 # Playwright
 playwright-report/
 test-results/
+.getaibd/

@@ -1,6 +1,24 @@
 // ================================
 // UTILITY FUNCTIONS
 // ================================
+export const TEAM_ROLES = Object.freeze({
+    OWNER: 'owner',
+    ADMIN: 'admin',
+    MEMBER: 'member',
+});
+
+export const getProjectTeamMembers = (project) => {
+    if (!project) return [];
+    const members = [];
+    if (project.owner) {
+        members.push({ ...project.owner, role: TEAM_ROLES.OWNER });
+    }
+    for (const m of project.members || []) {
+        members.push({ ...m, role: m.role || TEAM_ROLES.MEMBER });
+    }
+    return members;
+};
+
 export const generateId = () => Math.random().toString(36).substring(2, 15);
 
 export const generateUniqueProjectName = () => {
@@ -63,6 +81,66 @@ export const getEffectiveRemainingHours = (card, atTime) => {
     if (!eligible.length) return 0;
     eligible.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     return eligible[0].remainingHours;
+};
+
+export const getSpentHours = (card) => {
+    const log = Array.isArray(card.spentHoursLog) ? card.spentHoursLog : [];
+    return log.reduce((sum, e) => sum + (Number(e.spentHours) || 0), 0);
+};
+
+export const getListHourTotals = (list) => {
+    const cards = list?.cards || [];
+    return {
+        estimate: cards.reduce((sum, card) => sum + (Number(card.initialEstimate) || 0), 0),
+        remaining: cards.reduce((sum, card) => sum + getEffectiveRemainingHours(card), 0),
+    };
+};
+
+export const getSprintTotalEstimate = (cards) => {
+    return (cards || []).reduce((sum, card) => sum + (Number(card.initialEstimate) || 0), 0);
+};
+
+export const DEFAULT_PROJECT_LABELS = [
+    { id: 'priority-high', name: 'High Priority', color: '#ef4444' },
+    { id: 'priority-medium', name: 'Medium Priority', color: '#f59e0b' },
+    { id: 'priority-low', name: 'Low Priority', color: '#22c55e' },
+    { id: 'bug', name: 'Bug', color: '#dc2626' },
+    { id: 'feature', name: 'Feature', color: '#8b5cf6' },
+    { id: 'improvement', name: 'Improvement', color: '#06b6d4' },
+];
+
+export const getProjectLabels = (project) => {
+    if (project?.labels?.length) return project.labels;
+    return DEFAULT_PROJECT_LABELS;
+};
+
+export const getLabelDef = (project, labelId) => {
+    return getProjectLabels(project).find(l => l.id === labelId) || null;
+};
+
+export const getLabelColor = (project, labelId) => {
+    return getLabelDef(project, labelId)?.color || 'var(--accent-primary)';
+};
+
+export const getLabelName = (project, labelId) => {
+    return getLabelDef(project, labelId)?.name || labelId;
+};
+
+/**
+ * Inclusive calendar-day count between sprint start and end (YYYY-MM-DD).
+ */
+export const getSprintDurationDays = (startDate, endDate) => {
+    if (!startDate || !endDate) return null;
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return null;
+    return Math.round((end - start) / 86400000) + 1;
+};
+
+export const formatSprintDuration = (startDate, endDate) => {
+    const days = getSprintDurationDays(startDate, endDate);
+    if (!days) return '';
+    return days === 1 ? '1 day' : `${days} days`;
 };
 
 export const getDragAfterElement = (container, y) => {
