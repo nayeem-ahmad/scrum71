@@ -1,8 +1,8 @@
 version: '3.8'
 services:
-  flowboard:
+  scrum71:
     build: .
-    container_name: scrum71-flowboard
+    container_name: scrum71
     restart: unless-stopped
     expose:
       - "80"
