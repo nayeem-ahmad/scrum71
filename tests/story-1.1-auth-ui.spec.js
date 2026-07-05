@@ -99,3 +99,127 @@ test('Firebase mode: invalid login shows user-friendly error', async ({ page }) 
 
   await expect(page.locator('.toast.error')).toBeVisible({ timeout: 8000 });
 });
+
+test('Firebase mode: password reset flow request sends email and redirects to login', async ({ page }) => {
+  await page.route('**gstatic.com/firebasejs/**', route => route.abort());
+  await page.route('**firebaseapp.com/**', route => route.abort());
+
+  await page.addInitScript(() => {
+    window.lastResetEmail = null;
+    const firestoreMock = () => ({
+      collection: () => ({
+        doc: () => ({
+          get: async () => ({ exists: false }),
+          set: async () => {}
+        })
+      }),
+      enablePersistence: async () => {}
+    });
+    firestoreMock.FieldValue = {
+      serverTimestamp: () => new Date().toISOString()
+    };
+    window.firebase = {
+      initializeApp: () => {},
+      auth: () => ({
+        onAuthStateChanged: (cb) => {
+          setTimeout(() => cb(null), 50);
+        },
+        sendPasswordResetEmail: async (email) => {
+          window.lastResetEmail = email;
+        }
+      }),
+      firestore: firestoreMock
+    };
+  });
+
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await waitForAppReady(page);
+
+  // Navigate to reset form
+  await page.locator('#forgotPasswordLink').click();
+  await expect(page.locator('#resetForm')).not.toHaveClass(/hidden/);
+
+  // Submit reset request
+  await page.locator('#resetEmail').fill('resetme@example.com');
+  await page.locator('#resetForm button[type="submit"]').click();
+
+  // Verify success toast and redirected back to login form
+  await expect(page.locator('.toast.success')).toBeVisible();
+  await expect(page.locator('.toast.success')).toContainText('Password reset email sent');
+  await expect(page.locator('#loginForm')).not.toHaveClass(/hidden/);
+
+  // Verify function argument
+  const resetEmailSaved = await page.evaluate(() => window.lastResetEmail);
+  expect(resetEmailSaved).toBe('resetme@example.com');
+});
+
+test('Firebase mode: registration signup success logs in user', async ({ page }) => {
+  await page.route('**gstatic.com/firebasejs/**', route => route.abort());
+  await page.route('**firebaseapp.com/**', route => route.abort());
+
+  await page.addInitScript(() => {
+    window.lastRegisterUser = null;
+    window.lastAuthUpdates = null;
+    
+    const firestoreMock = () => ({
+      collection: () => ({
+        doc: () => ({
+          get: async () => ({ exists: false }),
+          set: async () => {}
+        })
+      }),
+      enablePersistence: async () => {}
+    });
+    firestoreMock.FieldValue = {
+      serverTimestamp: () => new Date().toISOString()
+    };
+
+    window.firebase = {
+      initializeApp: () => {},
+      auth: () => ({
+        onAuthStateChanged: (cb) => {
+          window.simulateLogin = (user) => cb(user);
+          setTimeout(() => cb(null), 50);
+        },
+        createUserWithEmailAndPassword: async (email, password) => {
+          const mockUser = {
+            uid: 'new-u1',
+            email,
+            displayName: '',
+            updateProfile: async (profile) => {
+              window.lastAuthUpdates = profile;
+              mockUser.displayName = profile.displayName;
+            }
+          };
+          window.lastRegisterUser = { email };
+          window.simulateLogin(mockUser);
+          return { user: mockUser };
+        }
+      }),
+      firestore: firestoreMock
+    };
+  });
+
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await waitForAppReady(page);
+
+  // Navigate to register form
+  await page.locator('.auth-tab[data-tab="register"]').click();
+  await expect(page.locator('#registerForm')).not.toHaveClass(/hidden/);
+
+  // Fill and submit register form
+  await page.locator('#registerName').fill('New User');
+  await page.locator('#registerEmail').fill('newuser@example.com');
+  await page.locator('#registerPassword').fill('password123');
+  await page.locator('#registerForm button[type="submit"]').click();
+
+  // Verify success toast
+  await expect(page.locator('.toast.success')).toBeVisible();
+  await expect(page.locator('.toast.success')).toContainText('Account created successfully');
+
+  // Verify arguments passed
+  const registerUser = await page.evaluate(() => window.lastRegisterUser);
+  const authUpdates = await page.evaluate(() => window.lastAuthUpdates);
+  expect(registerUser.email).toBe('newuser@example.com');
+  expect(authUpdates.displayName).toBe('New User');
+});

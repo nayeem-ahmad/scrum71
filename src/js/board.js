@@ -379,12 +379,50 @@ export const createListElement = (list) => {
         if (e.key === 'Escape') cancelCardBtn.click();
     });
 
-    // Render Cards
+    // Render Cards progressively
     const cardsContainer = listEl.querySelector('.list-cards');
-    list.cards.forEach(card => {
+    const cards = list.cards || [];
+    const INITIAL_LIMIT = 10;
+    const CHUNK_SIZE = 10;
+
+    // Render initial chunk
+    const initialCards = cards.slice(0, INITIAL_LIMIT);
+    initialCards.forEach(card => {
         const cardEl = createCardElement(card, list.id);
         cardsContainer.appendChild(cardEl);
     });
+
+    // Progressively render remaining cards in the background when idle/deferred
+    if (cards.length > INITIAL_LIMIT) {
+        let currentIndex = INITIAL_LIMIT;
+        
+        const renderNextChunk = () => {
+            if (currentIndex >= cards.length) return;
+            
+            const chunk = cards.slice(currentIndex, currentIndex + CHUNK_SIZE);
+            const fragment = document.createDocumentFragment();
+            chunk.forEach(card => {
+                const cardEl = createCardElement(card, list.id);
+                fragment.appendChild(cardEl);
+            });
+            cardsContainer.appendChild(fragment);
+            currentIndex += CHUNK_SIZE;
+            
+            if (currentIndex < cards.length) {
+                if (window.requestIdleCallback) {
+                    window.requestIdleCallback(renderNextChunk);
+                } else {
+                    setTimeout(renderNextChunk, 30);
+                }
+            }
+        };
+
+        if (window.requestIdleCallback) {
+            window.requestIdleCallback(renderNextChunk);
+        } else {
+            setTimeout(renderNextChunk, 30);
+        }
+    }
 
     // List drag-and-drop (reorder among siblings on the board)
     listEl.draggable = true;

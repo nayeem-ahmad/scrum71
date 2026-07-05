@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  flowboard:
+    build: .
+    container_name: scrum71-flowboard
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - shared_vps
+
+networks:
+  shared_vps:
+    external: true
+    name: retail-saas_default

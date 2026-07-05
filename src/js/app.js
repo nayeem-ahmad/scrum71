@@ -1,7 +1,7 @@
 import { initAuth } from './auth.js';
 import { renderBoard } from './board.js';
 import { state, loadState, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentBoard, getActiveProject, getCurrentUser, getBoardsForProject, deleteCard as deleteCardFromStore, createCard, updateCard, createBoard, createProject, updateBoard, updateProject } from './store.js';
-import { showToast, generateUniqueProjectName, generateId, getEffectiveRemainingHours, getSpentHours, formatSprintDuration, getProjectTeamMembers, getProjectLabels } from './utils.js';
+import { showToast, generateUniqueProjectName, generateId, getEffectiveRemainingHours, getSpentHours, formatSprintDuration, getProjectTeamMembers, getProjectLabels, debounce } from './utils.js';
 import { isFirebaseConfigured, storage } from './config.js';
 import { renderProjectManagement, unlinkBacklogFromCard } from './project.js';
 
@@ -1407,7 +1407,7 @@ document.getElementById('searchModal')?.addEventListener('click', (e) => {
     if (e.target.id === 'searchModal') closeSearch();
 });
 
-document.getElementById('searchInput')?.addEventListener('input', (e) => {
+const handleSearchInput = (e) => {
     const query = e.target.value.trim().toLowerCase();
     const resultsEl = document.getElementById('searchResults');
     if (!query) {
@@ -1460,6 +1460,16 @@ document.getElementById('searchInput')?.addEventListener('input', (e) => {
             }, 50);
         });
     });
+};
+
+const debouncedSearch = debounce(handleSearchInput, 250);
+
+document.getElementById('searchInput')?.addEventListener('input', (e) => {
+    if (!e.target.value.trim()) {
+        document.getElementById('searchResults').innerHTML = '<div class="search-empty">Start typing to search cards...</div>';
+        return;
+    }
+    debouncedSearch(e);
 });
 
 window.addEventListener('newUserNoBoards', () => {

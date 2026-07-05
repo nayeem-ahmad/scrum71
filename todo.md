@@ -15,7 +15,7 @@ Sources: `docs/prd/`, `docs/stories/`, `README_STATUS.md`, codebase audit, Playw
 | P3 | Epic 3 — Team collaboration | 5 |
 | P4 | Epic 4 — Time tracking & burndown | 4 |
 | P5 | Epic 5 — Enhanced cards | 3 |
-| P6 | Infrastructure & tech debt | 6 |
+| P6 | Infrastructure & tech debt | 2 |
 
 ---
 
@@ -196,9 +196,9 @@ Partially implemented in code but not fully verified or documented:
 
 - [x] **Add root `README.md`** — quick start, Firebase setup link, test commands
 - [x] **Sync story docs with reality** — story docs marked Complete where implemented (incl. Story 4.1)
-- [ ] **Offline support & sync** — improve localStorage ↔ Firestore reconciliation on reconnect
+- [x] **Offline support & sync** — improve localStorage ↔ Firestore reconciliation on reconnect
 - [x] **Firebase Storage rules** — `storage.rules` for `attachments/{boardId}/{cardId}/{fileName}`
-- [ ] **Expand Playwright coverage** — add specs for auth, project management, burndown, invites
+- [x] **Expand Playwright coverage** — add specs for auth, project management, burndown, invites
 - [x] **CI pipeline** — `.github/workflows/ci.yml` runs Playwright on push/PR to `main`
 
 ---
@@ -211,9 +211,9 @@ P0 (tests + Firebase) → P1 (close Epic 1) → P2 (projects) → P3 (collaborat
 
 ### Next 3 tasks to pick up
 
-1. Offline support & sync — localStorage ↔ Firestore reconciliation (P6)
-2. Expand Playwright coverage — remaining edge cases and Firebase live paths (P6)
-3. Performance polish — lazy render for large boards, debounced search (P6)
+1. Refactor CSS styles into modular component styles (P6)
+2. Improve web application bundles and asset compression (P6)
+3. Integrate advanced state pre-caching or Service Worker for instant startup (P6)
 
 ---
 
