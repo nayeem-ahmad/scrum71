@@ -88,7 +88,7 @@ test.describe('Column Card Sorting', () => {
     await page.locator('.list-menu-item.sort-title').click();
 
     // Verify card rendering order (A Card -> B Card -> C Card)
-    const cards = page.locator('.card-title');
+    const cards = page.locator('.card-title-text');
     await expect(cards.nth(0)).toHaveText('A Card');
     await expect(cards.nth(1)).toHaveText('B Card');
     await expect(cards.nth(2)).toHaveText('C Card');
@@ -107,7 +107,7 @@ test.describe('Column Card Sorting', () => {
     await page.locator('.list-menu-item.sort-estimate').click();
 
     // Verify card rendering order (A Card (16h) -> B Card (8h) -> C Card (4h))
-    const cards = page.locator('.card-title');
+    const cards = page.locator('.card-title-text');
     await expect(cards.nth(0)).toHaveText('A Card');
     await expect(cards.nth(1)).toHaveText('B Card');
     await expect(cards.nth(2)).toHaveText('C Card');
@@ -126,7 +126,7 @@ test.describe('Column Card Sorting', () => {
     await page.locator('.list-menu-item.sort-due-date').click();
 
     // Verify card rendering order (A Card (Jan 8) -> C Card (Jan 10) -> B Card (No due date))
-    const cards = page.locator('.card-title');
+    const cards = page.locator('.card-title-text');
     await expect(cards.nth(0)).toHaveText('A Card');
     await expect(cards.nth(1)).toHaveText('C Card');
     await expect(cards.nth(2)).toHaveText('B Card');
@@ -145,7 +145,7 @@ test.describe('Column Card Sorting', () => {
     await page.locator('.list-menu-item.sort-create-date').click();
 
     // Verify card rendering order (B Card (Jan 3) -> A Card (Jan 2) -> C Card (Jan 1))
-    const cards = page.locator('.card-title');
+    const cards = page.locator('.card-title-text');
     await expect(cards.nth(0)).toHaveText('B Card');
     await expect(cards.nth(1)).toHaveText('A Card');
     await expect(cards.nth(2)).toHaveText('C Card');
@@ -167,7 +167,7 @@ test.describe('Column Card Sorting', () => {
     // 1st: A Card (50% progress - 1/2 done)
     // 2nd: B Card (0% progress - 0/1 done)
     // 3rd: C Card (No checklist)
-    const cards = page.locator('.card-title');
+    const cards = page.locator('.card-title-text');
     await expect(cards.nth(0)).toHaveText('A Card');
     await expect(cards.nth(1)).toHaveText('B Card');
     await expect(cards.nth(2)).toHaveText('C Card');
