@@ -743,6 +743,82 @@ export const reorderLists = async (boardId, listOrder) => {
     await saveState();
 };
 
+export const sortCardsInList = async (boardId, listId, sortBy) => {
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) throw new Error('Board not found');
+    
+    const list = board.lists.find(l => l.id === listId);
+    if (!list) throw new Error('List not found');
+
+    const project = getActiveProject();
+    const team = getProjectTeamMembers(project);
+
+    const getAssigneeName = (card) => {
+        if (!card.assigneeId) return '';
+        const member = team.find(m => m.id === card.assigneeId);
+        return member ? (member.name || member.email || '').toLowerCase() : '';
+    };
+
+    const getChecklistProgress = (card) => {
+        const total = card.checklist ? card.checklist.length : 0;
+        if (total === 0) return -1; // place cards with no checklist at the bottom
+        const done = card.checklist.filter(i => i.completed).length;
+        return done / total;
+    };
+
+    switch (sortBy) {
+        case 'dueDate':
+            list.cards.sort((a, b) => {
+                if (!a.dueDate) return 1;
+                if (!b.dueDate) return -1;
+                return new Date(a.dueDate) - new Date(b.dueDate);
+            });
+            break;
+        case 'assignee':
+            list.cards.sort((a, b) => {
+                const nameA = getAssigneeName(a);
+                const nameB = getAssigneeName(b);
+                if (!nameA) return 1;
+                if (!nameB) return -1;
+                return nameA.localeCompare(nameB);
+            });
+            break;
+        case 'createdAt':
+            list.cards.sort((a, b) => {
+                const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
+                const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
+                return dateB - dateA; // Newest first
+            });
+            break;
+        case 'title':
+            list.cards.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+            break;
+        case 'estimate':
+            list.cards.sort((a, b) => {
+                const estA = Number(a.initialEstimate) || 0;
+                const estB = Number(b.initialEstimate) || 0;
+                if (estA === 0 && estB > 0) return 1;
+                if (estB === 0 && estA > 0) return -1;
+                return estB - estA; // Highest estimate first
+            });
+            break;
+        case 'checklist':
+            list.cards.sort((a, b) => {
+                const progA = getChecklistProgress(a);
+                const progB = getChecklistProgress(b);
+                if (progA === -1 && progB !== -1) return 1;
+                if (progB === -1 && progA !== -1) return -1;
+                return progB - progA; // Highest progress first
+            });
+            break;
+        default:
+            throw new Error(`Invalid sort option: ${sortBy}`);
+    }
+
+    board.updatedAt = new Date().toISOString();
+    await saveState();
+};
+
 // ================================
 // CARD MANAGEMENT FUNCTIONS
 // ================================

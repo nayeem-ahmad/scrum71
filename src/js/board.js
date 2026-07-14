@@ -1,4 +1,4 @@
-import { state, getCurrentBoard, getActiveProject, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentUser, createList, updateListTitle, deleteList, reorderLists, createCard, updateCard, deleteCard, moveCard } from './store.js';
+import { state, getCurrentBoard, getActiveProject, saveState, getOrCreateInviteToken, generateInviteToken, getCurrentUser, createList, updateListTitle, deleteList, reorderLists, createCard, updateCard, deleteCard, moveCard, sortCardsInList } from './store.js';
 import { generateId, showToast, getDragAfterElement, getEffectiveRemainingHours, getSpentHours, getListHourTotals, getSprintTotalEstimate, formatSprintDuration, getProjectTeamMembers, getLabelColor, getLabelName } from './utils.js';
 
 // ================================
@@ -192,6 +192,14 @@ export const createListElement = (list) => {
                 <button class="list-menu-item move-list-left"><svg viewBox="0 0 24 24" fill="none"><path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Move Left</button>
                 <button class="list-menu-item move-list-right"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Move Right</button>
                 <div class="list-menu-divider"></div>
+                <div class="list-menu-header">Sort Cards By</div>
+                <button class="list-menu-item sort-due-date"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M16 2V6M8 2V6M3 10H21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Due Date</button>
+                <button class="list-menu-item sort-assignee"><svg viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Assignee</button>
+                <button class="list-menu-item sort-create-date"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Creation Date</button>
+                <button class="list-menu-item sort-title"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Title</button>
+                <button class="list-menu-item sort-estimate"><svg viewBox="0 0 24 24" fill="none"><path d="M18 20V10M12 20V4M6 20v-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Estimate</button>
+                <button class="list-menu-item sort-checklist"><svg viewBox="0 0 24 24" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Checklist Progress</button>
+                <div class="list-menu-divider"></div>
                 <button class="list-menu-item copy-list"><svg viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15H4C2.89543 15 2 14.1046 2 13V4C2 2.89543 2.89543 2 4 2H13C14.1046 2 15 2.89543 15 4V5" stroke="currentColor" stroke-width="2"/></svg>Copy list</button>
                 <button class="list-menu-item clear-list"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M9 9L15 15M15 9L9 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Clear cards</button>
                 <button class="list-menu-item danger delete-list"><svg viewBox="0 0 24 24" fill="none"><path d="M3 6H21M8 6V4C8 2.89543 8.89543 2 10 2H14C15.1046 2 16 2.89543 16 4V6M19 6V20C19 21.1046 18.1046 22 17 22H7C5.89543 22 5 21.1046 5 20V6H19Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Delete list</button>
@@ -339,6 +347,27 @@ export const createListElement = (list) => {
             }
         }
     });
+
+    const bindSortListener = (selector, sortBy, successMsg) => {
+        listEl.querySelector(selector).addEventListener('click', async () => {
+            try {
+                const board = getCurrentBoard();
+                await sortCardsInList(board.id, list.id, sortBy);
+                renderBoard();
+                showToast(successMsg, 'success');
+            } catch (error) {
+                console.error(`Error sorting list by ${sortBy}:`, error);
+                showToast('Failed to sort cards', 'error');
+            }
+        });
+    };
+
+    bindSortListener('.sort-due-date', 'dueDate', 'Cards sorted by due date!');
+    bindSortListener('.sort-assignee', 'assignee', 'Cards sorted by assignee!');
+    bindSortListener('.sort-create-date', 'createdAt', 'Cards sorted by creation date!');
+    bindSortListener('.sort-title', 'title', 'Cards sorted by title!');
+    bindSortListener('.sort-estimate', 'estimate', 'Cards sorted by estimate!');
+    bindSortListener('.sort-checklist', 'checklist', 'Cards sorted by checklist progress!');
 
     // Add Card
     const addCardBtn = listEl.querySelector('.add-card-btn');
