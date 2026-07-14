@@ -64,6 +64,14 @@ const TEST_BOARD_STATE = {
 };
 
 test.describe('Column Card Sorting', () => {
+  test.beforeEach(async ({ page }) => {
+    page.on('console', msg => {
+      console.log(`BROWSER CONSOLE [${msg.type()}]: ${msg.text()}`);
+    });
+    page.on('pageerror', err => {
+      console.log(`BROWSER PAGE ERROR: ${err.message}`);
+    });
+  });
   test('should display sorting header and options in list menu', async ({ page }) => {
     await loadGuestBoard(page, TEST_BOARD_STATE);
 

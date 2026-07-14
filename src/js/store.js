@@ -1,5 +1,5 @@
 import { auth, db, isFirebaseConfigured } from './config.js';
-import { generateId, showToast, getEffectiveRemainingHours, DEFAULT_PROJECT_LABELS } from './utils.js';
+import { generateId, showToast, getEffectiveRemainingHours, DEFAULT_PROJECT_LABELS, getProjectTeamMembers } from './utils.js';
 
 // ================================
 // DATA STORE
